@@ -3,6 +3,7 @@
 "app\main.o"
 "app\stm32f1xx_it.o"
 "app\stm32f1xx_hal_msp.o"
+"app\app_init.o"
 "app\stm32f1xx_hal_gpio_ex.o"
 "app\stm32f1xx_hal_tim.o"
 "app\stm32f1xx_hal_tim_ex.o"
