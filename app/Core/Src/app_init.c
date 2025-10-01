@@ -8,6 +8,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "app_init.h"
+#include "uart.h"
+#include "protocol.h"
 
 /* Private variables ---------------------------------------------------------*/
 static GPIO_PinState led_state = GPIO_PIN_SET;  // 初始状态：熄灭
@@ -37,8 +39,17 @@ void App_Init(void)
     /* 初始化GPIO */
     App_GPIO_Init();
 
+    /* 初始化UART通信 */
+    App_UART_Init();
+    
+    /* 初始化Protocol */
+    App_Protocol_Init();
+
     /* 显示启动指示 */
     App_LED_StartupIndication();
+    
+    /* 发送启动完成系统信息到PC端 */
+    App_SendStartupInfo();
 }
 
 /**
@@ -154,6 +165,54 @@ void App_LED_Toggle(void)
 GPIO_PinState App_LED_GetState(void)
 {
     return led_state;
+}
+
+/**
+ * @brief  UART初始化函数
+ * @retval None
+ */
+void App_UART_Init(void)
+{
+    /* 初始化UART1 */
+    MX_USART1_UART_Init();
+    
+    /* 启动UART中断接收 */
+    UART_StartInterruptReceive();
+}
+
+/**
+ * @brief  Protocol初始化函数
+ * @retval None
+ */
+void App_Protocol_Init(void)
+{
+    /* 初始化协议模块 */
+    Protocol_Init();
+}
+
+/**
+ * @brief  发送启动完成系统信息
+ * @retval None
+ */
+void App_SendStartupInfo(void)
+{
+    /* 小延时确保UART完全初始化 */
+    HAL_Delay(10);
+    
+    /* 发送系统信息到PC端，表示APP启动完成 */
+    Protocol_SendSystemInfo();
+    
+    /* 小延时确保数据发送完成 */
+    HAL_Delay(10);
+    
+    /* 发送内存信息 */
+    Protocol_SendMemoryInfo();
+    
+    /* 小延时确保数据发送完成 */
+    HAL_Delay(10);
+    
+    /* 发送状态报告，表示系统就绪 */
+    Protocol_SendStatusReport(STATUS_READY);
 }
 
 /**

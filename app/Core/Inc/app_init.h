@@ -15,6 +15,8 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "uart.h"
+#include "protocol.h"
 #include <stdint.h>
 
 /* Exported constants --------------------------------------------------------*/
@@ -51,6 +53,24 @@ void App_GPIO_Init(void);
  * @retval None
  */
 void App_SysTick_Reconfig(void);
+
+/**
+ * @brief  UART初始化函数
+ * @retval None
+ */
+void App_UART_Init(void);
+
+/**
+ * @brief  Protocol初始化函数
+ * @retval None
+ */
+void App_Protocol_Init(void);
+
+/**
+ * @brief  发送启动完成系统信息
+ * @retval None
+ */
+void App_SendStartupInfo(void);
 
 /**
  * @brief  LED相关函数
