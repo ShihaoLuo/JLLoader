@@ -23,20 +23,20 @@
 #include "flash_config.h"
 #include "bootloader_check.h"
 #include "protocol.h"
+#include "bootloader_jump.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdint.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define BOOTLOADER_TIMEOUT_MS  10000  // 10 seconds
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,7 +47,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static uint32_t bootloader_start_time = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -105,6 +105,9 @@ int main(void)
   // Start UART interrupt reception
   UART_StartInterruptReceive();
   
+  // Record bootloader start time
+  bootloader_start_time = HAL_GetTick();
+  
   // Send system initialization status
   Protocol_SendStatus(STATUS_READY);
   
@@ -137,7 +140,19 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
+    // Check if 10 seconds have elapsed
+    if ((HAL_GetTick() - bootloader_start_time) >= BOOTLOADER_TIMEOUT_MS)
+    {
+      // Jump to application using the new modular function
+      Bootloader_JumpToApplication(APPLICATION_ADDRESS);
+    }
+    
+    // Process any incoming protocol commands
+    // Add your protocol handling here if needed
+    
+    // Small delay to prevent excessive CPU usage
+    HAL_Delay(1);
+    /* USER CODE END WHILE */
   }
   /* USER CODE END 3 */
 }

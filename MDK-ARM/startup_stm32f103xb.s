@@ -58,7 +58,7 @@ __heap_limit
                 EXPORT  __Vectors_Size
 
 __Vectors       DCD     __initial_sp               ; Top of Stack
-                DCD     Reset_Handler              ; Reset Handler
+                DCD     Bootloader_Reset_Handler   ; Bootloader Reset Handler
                 DCD     NMI_Handler                ; NMI Handler
                 DCD     HardFault_Handler          ; Hard Fault Handler
                 DCD     MemManage_Handler          ; MPU Fault Handler
@@ -124,9 +124,9 @@ __Vectors_Size  EQU  __Vectors_End - __Vectors
 
                 AREA    |.text|, CODE, READONLY
 
-; Reset handler
-Reset_Handler    PROC
-                 EXPORT  Reset_Handler             [WEAK]
+; Bootloader Reset handler
+Bootloader_Reset_Handler    PROC
+                 EXPORT  Bootloader_Reset_Handler  [WEAK]
      IMPORT  __main
      IMPORT  SystemInit
                  LDR     R0, =SystemInit

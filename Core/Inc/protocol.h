@@ -68,6 +68,9 @@ extern "C" {
 #define MODE_SYSTEM_MEMORY              0x72  // Running in System Memory mode
 #define MODE_UNKNOWN                    0x73  // Unknown running mode
 
+/* Transition Status (0x90-0x9F) */
+#define STATUS_JUMPING_TO_APP           0x90  // Jumping to application
+
 /* Data Structures -----------------------------------------------------------*/
 
 /**

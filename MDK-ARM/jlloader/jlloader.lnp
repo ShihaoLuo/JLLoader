@@ -8,6 +8,7 @@
 "jlloader\build_check.o"
 "jlloader\stm32f1xx_it.o"
 "jlloader\stm32f1xx_hal_msp.o"
+"jlloader\bootloader_jump.o"
 "jlloader\stm32f1xx_hal_gpio_ex.o"
 "jlloader\stm32f1xx_hal_tim.o"
 "jlloader\stm32f1xx_hal_tim_ex.o"
