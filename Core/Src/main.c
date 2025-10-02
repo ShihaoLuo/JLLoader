@@ -115,12 +115,12 @@ int main(void)
   // Record bootloader start time
   bootloader_start_time = HAL_GetTick();
   
-  // Send system ready status
-  Protocol_SendStatus(STATUS_READY);
+  // // Send system ready status
+  // Protocol_SendStatus(STATUS_READY);
   
-  // Send initial system and memory information
-  Protocol_SendSystemInfo();
-  Protocol_SendMemoryInfo();
+  // // Send initial system and memory information
+  // Protocol_SendSystemInfo();
+  // Protocol_SendMemoryInfo();
   
   // Verify bootloader constraints
   if (!Flash_CheckBootloaderConstraints())

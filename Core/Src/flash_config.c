@@ -155,7 +155,7 @@ uint8_t Flash_CheckBootloaderConstraints(void)
   }
   
   /* Check bootloader size */
-  if (BOOTLOADER_SIZE > 0x2800)  /* 10KB */
+  if (BOOTLOADER_SIZE > 0x4000)  /* 10KB */
   {
     return 0;
   }

@@ -48,8 +48,8 @@ void App_Init(void)
     /* 显示启动指示 */
     App_LED_StartupIndication();
     
-    /* 发送启动完成系统信息到PC端 */
-    App_SendStartupInfo();
+    // /* 发送启动完成系统信息到PC端 */
+    // App_SendStartupInfo();
 }
 
 /**

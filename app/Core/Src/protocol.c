@@ -126,28 +126,40 @@ bool Protocol_SendFrame(uint8_t type, uint8_t status, const uint8_t* data, uint8
         protocol_error_count++;
         return false;
     }
-    
-    Protocol_Frame_t frame;
-    frame.header = PROTOCOL_HEADER_MCU_TO_PC;  // MCU向PC发送使用0xBB
-    frame.length = length;
-    frame.type = type;
-    frame.status = status;
-    
-    // Copy data if provided
+
+    // 1. 创建一个足够大的缓冲区来手动构建帧
+    uint8_t frame_buffer[PROTOCOL_MIN_FRAME_LENGTH + PROTOCOL_MAX_DATA_LENGTH + 1];
+    uint16_t frame_size = PROTOCOL_MIN_FRAME_LENGTH + length + 1; // header, length, type, status, data, checksum
+
+    // 2. 填充帧的元数据
+    frame_buffer[0] = PROTOCOL_HEADER_MCU_TO_PC;
+    frame_buffer[1] = length;
+    frame_buffer[2] = type;
+    frame_buffer[3] = status;
+
+    // 3. 复制数据负载
     if (data != NULL && length > 0) {
-        for (uint8_t i = 0; i < length; i++) {
-            frame.data[i] = data[i];
+        for (int i = 0; i < length; i++) {
+            frame_buffer[PROTOCOL_MIN_FRAME_LENGTH + i] = data[i];
         }
     }
-    
-    // Calculate and set checksum
-    frame.checksum = Protocol_CalculateChecksum(&frame, length);
-    
-    // Send frame via UART
-    uint8_t* frame_bytes = (uint8_t*)&frame;
-    uint16_t frame_size = PROTOCOL_MIN_FRAME_LENGTH + length;
-    
-    return UART_SendData(frame_bytes, frame_size);
+
+    // 4. 计算校验和
+    // 校验和的计算应该只包括 LENGTH, TYPE, STATUS 和 DATA
+    uint16_t sum = 0;
+    sum += length;
+    sum += type;
+    sum += status;
+    for (int i = 0; i < length; i++) {
+        sum += data[i];
+    }
+    uint8_t checksum = (uint8_t)(~sum);
+
+    // 5. 将校验和放在缓冲区的最后一个字节
+    frame_buffer[frame_size - 1] = checksum;
+
+    // 6. 发送整个手动构建的帧
+    return UART_SendData(frame_buffer, frame_size);
 }
 
 /**

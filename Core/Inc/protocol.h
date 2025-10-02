@@ -88,7 +88,7 @@ typedef struct {
     uint8_t status;                             /*!< Status code */
     uint8_t data[PROTOCOL_MAX_DATA_LENGTH];     /*!< Variable length data */
     uint8_t checksum;                           /*!< Frame checksum */
-} Protocol_Frame_t;
+} __attribute__((packed)) Protocol_Frame_t;
 
 /**
  * @brief System information data structure
