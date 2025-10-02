@@ -65,6 +65,8 @@ Bootloader 和 Application 固件均遵循此协议，实现了统一的通信�
 | `0x03` | `CMD_STATUS_REPORT` | MCU → PC | 对 `CMD_HEARTBEAT` 的响应，报告设备当前状态。 |
 | `0x04` | `CMD_ERROR_REPORT` | MCU → PC | 当发生错误时（如校验和错误、命令无效），设备主动发送此报告。 |
 | `0x05` | `CMD_JUMP_RESPONSE` | MCU → PC | 对 `CMD_JUMP_TO_MODE` 的响应，报告模式跳转的结果。 |
+| `0x20` | `CMD_ERASE_FLASH` | PC → MCU | 请求擦除指定区域的Flash。 |
+| `0x21` | `CMD_ERASE_RESPONSE` | MCU → PC | 对 `CMD_ERASE_FLASH` 的响应，报告擦除结果。 |
 
 ## 5. 状态码 (STATUS)
 
@@ -82,6 +84,16 @@ Bootloader 和 Application 固件均遵循此协议，实现了统一的通信�
 | `0x11` | `ERROR_CHECKSUM` | 接收到的数据帧校验和错误。 |
 | `0x12` | `ERROR_LENGTH` | 数据帧的长度字段与实际负载不符。 |
 | `0x13` | `ERROR_TIMEOUT` | 操作超时。 |
+
+### Flash 操作状态 (0x40-0x4F)
+
+| 值 | 名称 | 描述 |
+| :--- | :--- | :--- |
+| `0x40` | `STATUS_ERASE_COMPLETED` | Flash擦除操作成功完成。 |
+| `0x41` | `ERROR_ERASE_FAILED` | Flash擦除过程中发生硬件错误。 |
+| `0x42` | `ERROR_INVALID_ADDRESS` | 请求的起始地址无效（非页对齐或超出Flash范围）。 |
+| `0x43` | `ERROR_INVALID_PAGE_COUNT` | 请求擦除的页数无效（为0或擦除范围超出Flash）。 |
+| `0x44` | `ERROR_WRITE_PROTECTED` | 尝试擦除被写保护的内存区域（例如Bootloader）。 |
 
 ### 运行模式状态
 
@@ -141,6 +153,30 @@ Bootloader 和 Application 固件均遵循此协议，实现了统一的通信�
     } __attribute__((packed));
     ```
 
+### `CMD_ERASE_FLASH` (0x20)
+
+-   **描述:** 上位机请求擦除Flash时携带的参数。
+-   **结构体 (`Protocol_EraseRequest_t`):**
+    ```c
+    struct {
+        uint32_t start_page_address; // 擦除操作的起始页地址 (必须是页的起始地址)
+        uint16_t page_count;         // 从起始地址开始，连续擦除的页数
+    } __attribute__((packed));
+    ```
+
+### `CMD_ERASE_RESPONSE` (0x21)
+
+-   **描述:** 设备完成擦除操作后的响应。
+-   **结构体 (`Protocol_EraseResponse_t`):**
+    ```c
+    struct {
+        uint8_t  erase_status;       // 擦除操作的结果状态码 (见Flash操作状态)
+        uint32_t start_page_address; // 执行擦除的起始地址
+        uint16_t pages_erased;       // 成功擦除的页数 (失败时可能为0)
+        uint32_t duration_ms;        // 完成擦除操作所花费的时间 (毫秒)
+    } __attribute__((packed));
+    ```
+
 ## 7. 通信流程示例
 
 ### 示例：心跳检测
@@ -163,3 +199,28 @@ Bootloader 和 Application 固件均遵循此协议，实现了统一的通信�
         -   `03`: 设备状态为 `STATUS_IDLE` (空闲)。
         -   `D0 0F 00 00...`: 12字节的 `Protocol_StatusReport_t` 数据。
         -   `C4`: 根据前面所有字段计算出的正确校验和。
+
+### 示例：Flash擦除
+
+1.  **PC → MCU:** 上位机请求从地址 `0x08004000` 开始，擦除 `10` 个Flash页面。
+    -   **Frame:** `AA 06 20 00 00 40 00 08 0A 00 8B`
+    -   **解析:**
+        -   `AA`: PC发往MCU。
+        -   `06`: 数据长度为6字节 (`start_page_address` 4字节 + `page_count` 2字节)。
+        -   `20`: 命令类型为 `CMD_ERASE_FLASH`。
+        -   `00`: 状态码，请求时通常为0。
+        -   `00 40 00 08`: 数据，起始地址 `0x08004000` (小端模式)。
+        -   `0A 00`: 数据，页数 `10` (小端模式)。
+        -   `8B`: 校验和 `~(0x06 + 0x20 + 0x00 + 0x00 + 0x40 + 0x00 + 0x08 + 0x0A + 0x00)`。
+
+2.  **MCU → PC:** 设备成功完成擦除操作后，进行响应。
+    -   **Frame (示例):** `BB 0B 21 40 40 00 40 00 08 0A 00 32 00 00 00 5D`
+    -   **解析:**
+        -   `BB`: MCU回复给PC。
+        -   `0B`: 数据长度为11字节 (`Protocol_EraseResponse_t` 的大小)。
+        -   `21`: 消息类型为 `CMD_ERASE_RESPONSE`。
+        -   `40`: 状态为 `STATUS_ERASE_COMPLETED` (擦除成功)。
+        -   `00 40 00 08`: 数据，确认擦除的起始地址 `0x08004000`。
+        -   `0A 00`: 数据，确认已擦除10个页。
+        -   `32 00 00 00`: 数据，操作耗时50毫秒 (`0x00000032`)。
+        -   `5D`: 根据前面所有字段计算出的正确校验和。

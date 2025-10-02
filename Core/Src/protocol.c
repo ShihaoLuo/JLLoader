@@ -46,6 +46,7 @@ static volatile uint32_t jump_delay_ms = 0;
 /* Private function prototypes -----------------------------------------------*/
 static uint32_t Protocol_GetBuildTimestamp(void);
 static uint8_t Protocol_GetResetReason(void);
+static bool Protocol_ProcessEraseRequest(const Protocol_EraseRequest_t* request);
 
 /**
  * @brief Get current running mode based on PC (Program Counter) address
@@ -373,6 +374,15 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
                 }
                 processed_any_frame = true;
                 break;
+
+            case CMD_ERASE_FLASH:
+                if (frame_length >= sizeof(Protocol_EraseRequest_t)) {
+                    Protocol_ProcessEraseRequest((const Protocol_EraseRequest_t*)frame_data);
+                } else {
+                    Protocol_SendErrorReport(ERROR_LENGTH);
+                }
+                processed_any_frame = true;
+                break;
                 
             default:
                 Protocol_SendErrorReport(ERROR_INVALID_CMD);
@@ -483,6 +493,52 @@ static uint8_t Protocol_GetResetReason(void)
     
     return 0x00;  // Unknown reset
 }
+
+/**
+ * @brief Process flash erase request
+ */
+static bool Protocol_ProcessEraseRequest(const Protocol_EraseRequest_t* request)
+{
+    if (request == NULL) {
+        return Protocol_SendErrorReport(ERROR_INVALID_PARAM);
+    }
+
+    uint32_t start_time = HAL_GetTick();
+    HAL_StatusTypeDef erase_status;
+    Protocol_EraseResponse_t response;
+
+    response.start_page_address = request->start_page_address;
+    response.pages_erased = 0;
+
+    // Basic validation
+    if (request->page_count == 0) {
+        response.erase_status = STATUS_ERASE_ADDR_INVALID;
+    } else {
+        // Call the core flash erase function
+        erase_status = Flash_ErasePages(request->start_page_address, request->page_count);
+
+        if (erase_status == HAL_OK) {
+            response.erase_status = STATUS_ERASE_COMPLETED;
+            response.pages_erased = request->page_count;
+        } else {
+            // Determine the cause of the error
+            uint32_t end_erase_addr = request->start_page_address + request->page_count * FLASH_PAGE_SIZE - 1;
+            if (request->start_page_address < APPLICATION_START_ADDRESS || end_erase_addr > APPLICATION_END_ADDRESS) {
+                response.erase_status = STATUS_ERASE_PROTECTED; // Trying to erase bootloader or out of bounds
+            } else if ((request->start_page_address % FLASH_PAGE_SIZE) != 0) {
+                response.erase_status = STATUS_ERASE_ADDR_INVALID;
+            } else {
+                response.erase_status = STATUS_ERASE_ERROR; // General erase error
+            }
+        }
+    }
+
+    uint32_t end_time = HAL_GetTick();
+    response.duration_ms = end_time - start_time;
+
+    return Protocol_SendFrame(CMD_ERASE_RESPONSE, response.erase_status, (const uint8_t*)&response, sizeof(response));
+}
+
 
 /* Jump-related function implementations -------------------------------------*/
 

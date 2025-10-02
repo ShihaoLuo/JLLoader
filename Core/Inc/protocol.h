@@ -37,21 +37,30 @@ extern "C" {
 #define CMD_GET_MEMORY                  0x11  // Host → MCU: Get memory info
 #define CMD_HEARTBEAT                   0x12  // Host → MCU: Heartbeat
 #define CMD_JUMP_TO_MODE                0x13  // Host → MCU: Mode jump command
+#define CMD_ERASE_FLASH                 0x20  // Erase Flash memory
+#define CMD_ERASE_RESPONSE              0x21  // Erase Flash response
 
-/* Status Codes (STATUS field) ----------------------------------------------*/
-/* System Status (0x00-0x0F) */
-#define STATUS_OK                       0x00  // Operation successful
-#define STATUS_READY                    0x01  // System ready
-#define STATUS_BUSY                     0x02  // System busy
-#define STATUS_IDLE                     0x03  // System idle
+/* Status Codes: System & Error (0x00-0x2F) */
+#define STATUS_OK                       0x00    /*!< Operation successful */
+#define STATUS_READY                    0x01    /*!< System ready */
+#define STATUS_BUSY                     0x02    /*!< System busy */
+#define STATUS_IDLE                     0x03    /*!< System idle */
 
 /* Error Status (0x10-0x2F) */
 #define ERROR_INVALID_CMD               0x10  // Invalid command
 #define ERROR_CHECKSUM                  0x11  // Checksum error
 #define ERROR_LENGTH                    0x12  // Length error
 #define ERROR_TIMEOUT                   0x13  // Timeout error
+#define ERROR_INVALID_PARAM             0x14  // Invalid parameter in data payload
 
-/* Memory Status (0x30-0x4F) */
+/* Status Codes: Flash Operations (0x40-0x4F) */
+#define STATUS_ERASE_COMPLETED          0x40    /*!< Flash erase operation completed successfully */
+#define STATUS_ERASE_ERROR              0x41    /*!< Flash erase operation failed */
+#define STATUS_ERASE_ADDR_INVALID       0x42    /*!< Invalid start address (not page-aligned or out of range) */
+#define STATUS_ERASE_COUNT_INVALID      0x43    /*!< Invalid page count (zero or exceeds Flash size) */
+#define STATUS_ERASE_PROTECTED          0x44    /*!< Attempted to erase a write-protected area (e.g., Bootloader) */
+
+/* Status Codes: Memory & Constraints (0x30-0x3F) - Renumbered for clarity */
 #define MEM_BOOTLOADER_OK               0x30  // Bootloader area OK
 #define MEM_APP_VALID                   0x31  // Application valid
 #define MEM_APP_INVALID                 0x32  // Application invalid
@@ -140,6 +149,24 @@ typedef struct {
     uint16_t timeout_ms;                        /*!< Jump timeout time (milliseconds) */
     uint32_t magic_word;                        /*!< Magic word (0x12345678) for security verification */
 } __attribute__((packed)) Protocol_JumpModeRequest_t;
+
+/**
+ * @brief Flash erase request data structure (Host -> MCU)
+ */
+typedef struct {
+    uint32_t start_page_address; /*!< Start address of the first page to erase */
+    uint16_t page_count;         /*!< Number of pages to erase */
+} __attribute__((packed)) Protocol_EraseRequest_t;
+
+/**
+ * @brief Flash erase response data structure (MCU -> Host)
+ */
+typedef struct {
+    uint8_t  erase_status;       /*!< Result status code of the erase operation */
+    uint32_t start_page_address; /*!< The start address of the erase operation */
+    uint16_t pages_erased;       /*!< Number of pages successfully erased */
+    uint32_t duration_ms;        /*!< Duration of the erase operation in milliseconds */
+} __attribute__((packed)) Protocol_EraseResponse_t;
 
 /**
  * @brief Mode jump response data structure

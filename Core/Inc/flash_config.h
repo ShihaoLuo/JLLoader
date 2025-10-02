@@ -97,6 +97,9 @@ uint32_t Flash_GetBootloaderSize(void);
 uint32_t Flash_GetApplicationStartAddress(void);
 uint32_t Flash_GetApplicationMaxSize(void);
 
+/* Flash Operation Functions */
+HAL_StatusTypeDef Flash_ErasePages(uint32_t start_address, uint16_t page_count);
+
 /* Address Validation Functions */
 uint8_t Flash_IsBootloaderAddress(uint32_t address);
 uint8_t Flash_IsApplicationAddress(uint32_t address);
@@ -105,24 +108,8 @@ uint8_t Flash_IsValidFlashAddress(uint32_t address);
 /* Size Validation Functions */
 uint8_t Flash_IsBootloaderSizeValid(uint32_t size);
 uint8_t Flash_CheckBootloaderConstraints(void);
-
-/* USER CODE BEGIN EFP */
-
-/* USER CODE END EFP */
-
-/* Private defines -----------------------------------------------------------*/
-/* USER CODE BEGIN Private defines */
-
-/* Compile-time size check */
-#if (BOOTLOADER_SIZE > 0x4000)
-    #error "Bootloader size exceeds 16KB limit!"
-#endif
-
-#if (BOOTLOADER_START_ADDRESS != 0x08000000UL)
-    #error "Bootloader must start at Flash base address 0x08000000!"
-#endif
-
-/* USER CODE END Private defines */
+uint8_t Flash_EraseApplicationPages(void);
+uint8_t Flash_ErasePages(uint32_t start_address, uint16_t page_count);
 
 #ifdef __cplusplus
 }

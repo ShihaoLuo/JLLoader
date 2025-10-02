@@ -20,6 +20,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "flash_config.h"
+#include "stm32f1xx_hal_flash.h"
+#include "stm32f1xx_hal_flash_ex.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -175,6 +177,52 @@ uint8_t Flash_CheckBootloaderConstraints(void)
   return 1;
 }
 
-/* USER CODE BEGIN 4 */
+/**
+ * @brief Erase a specified number of pages starting from a given address.
+ * @param start_address The starting address of the first page to erase. Must be page-aligned.
+ * @param page_count The number of pages to erase.
+ * @return HAL_StatusTypeDef: HAL_OK on success, HAL_ERROR or HAL_BUSY on failure.
+ */
+HAL_StatusTypeDef Flash_ErasePages(uint32_t start_address, uint16_t page_count)
+{
+    if (page_count == 0) {
+        return HAL_OK; // Nothing to erase is considered a success.
+    }
 
-/* USER CODE END 4 */
+    // Security check: Do not allow erasing the bootloader itself or outside the application area.
+    uint32_t end_erase_addr = start_address + page_count * FLASH_PAGE_SIZE - 1;
+    if (start_address < APPLICATION_START_ADDRESS || end_erase_addr > APPLICATION_END_ADDRESS) {
+        return HAL_ERROR; // Address range is outside the application area.
+    }
+
+    // Ensure the start address is page-aligned.
+    if ((start_address % FLASH_PAGE_SIZE) != 0) {
+        return HAL_ERROR; // Address is not page-aligned.
+    }
+
+    HAL_StatusTypeDef status;
+
+    // Unlock the Flash to enable the flash control register access.
+    if (HAL_FLASH_Unlock() != HAL_OK) {
+        return HAL_ERROR;
+    }
+
+    // Clear any pending flags before the operation.
+    __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
+
+    FLASH_EraseInitTypeDef EraseInitStruct;
+    uint32_t PageError = 0;
+
+    EraseInitStruct.TypeErase   = FLASH_TYPEERASE_PAGES;
+    EraseInitStruct.PageAddress = start_address;
+    EraseInitStruct.NbPages     = page_count;
+
+    // Perform the erase operation.
+    status = HAL_FLASHEx_Erase(&EraseInitStruct, &PageError);
+
+    // Lock the Flash to disable the flash control register access.
+    // It's important to lock the flash even if the erase operation fails.
+    HAL_FLASH_Lock();
+
+    return status;
+}
