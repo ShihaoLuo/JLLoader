@@ -56,14 +56,14 @@ extern "C" {
  * Total Flash: 64KB (0x08000000 - 0x0800FFFF)
  * 
  * Bootloader Layout:
- * - Bootloader Code: 0x08000000 - 0x08002800 (10KB)
- * - Reserved Area:   0x08002800 - 0x0800FFFF (54KB for application)
+ * - Bootloader Code: 0x08000000 - 0x08003FFF (16KB)
+ * - Reserved Area:   0x08004000 - 0x0800FFFF (48KB for application)
  */
 
 /* Bootloader Memory Configuration */
 #define FLASH_BASE_ADDRESS              0x08000000UL    /*!< Flash base address */
 #define BOOTLOADER_START_ADDRESS        0x08000000UL    /*!< Bootloader start address */
-#define BOOTLOADER_SIZE                 0x2800UL        /*!< Bootloader size: 10KB */
+#define BOOTLOADER_SIZE                 0x4000UL        /*!< Bootloader size: 16KB */
 #define BOOTLOADER_END_ADDRESS          (BOOTLOADER_START_ADDRESS + BOOTLOADER_SIZE - 1)
 
 /* Application Memory Configuration */
@@ -114,8 +114,8 @@ uint8_t Flash_CheckBootloaderConstraints(void);
 /* USER CODE BEGIN Private defines */
 
 /* Compile-time size check */
-#if (BOOTLOADER_SIZE > 0x2800)
-    #error "Bootloader size exceeds 10KB limit!"
+#if (BOOTLOADER_SIZE > 0x4000)
+    #error "Bootloader size exceeds 16KB limit!"
 #endif
 
 #if (BOOTLOADER_START_ADDRESS != 0x08000000UL)

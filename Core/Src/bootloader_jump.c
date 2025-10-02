@@ -68,12 +68,6 @@ void Bootloader_JumpToApplication(uint32_t app_address)
         return; /* Invalid application, don't jump */
     }
     
-    /* Send jump notification */
-    Protocol_SendStatus(STATUS_JUMPING_TO_APP);
-    
-    /* Small delay to ensure message is sent */
-    HAL_Delay(10);
-    
     /* Prepare system for jump */
     Bootloader_PrepareJump();
     

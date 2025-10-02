@@ -32,9 +32,11 @@ extern "C" {
 #define CMD_MEMORY_INFO                 0x02  // MCU → Host: Memory layout info
 #define CMD_STATUS_REPORT               0x03  // MCU → Host: Status report
 #define CMD_ERROR_REPORT                0x04  // MCU → Host: Error report
+#define CMD_JUMP_RESPONSE               0x05  // MCU → Host: Mode jump response
 #define CMD_GET_INFO                    0x10  // Host → MCU: Get system info
 #define CMD_GET_MEMORY                  0x11  // Host → MCU: Get memory info
 #define CMD_HEARTBEAT                   0x12  // Host → MCU: Heartbeat
+#define CMD_JUMP_TO_MODE                0x13  // Host → MCU: Mode jump command
 
 /* Status Codes (STATUS field) ----------------------------------------------*/
 /* System Status (0x00-0x0F) */
@@ -56,20 +58,23 @@ extern "C" {
 #define MEM_CONSTRAINT_OK               0x33  // Memory constraint check passed
 #define MEM_CONSTRAINT_ERR              0x34  // Memory constraint check failed
 
-/* Hardware Status (0x50-0x6F) */
-#define HW_CLOCK_OK                     0x50  // Clock configuration OK
-#define HW_UART_OK                      0x51  // UART configuration OK
-#define HW_GPIO_OK                      0x52  // GPIO configuration OK
-#define HW_TIMER_OK                     0x53  // Timer configuration OK
-
 /* Running Mode Status (0x70-0x8F) */
 #define MODE_BOOTLOADER                 0x70  // Running in Bootloader mode
 #define MODE_APPLICATION                0x71  // Running in Application mode
 #define MODE_SYSTEM_MEMORY              0x72  // Running in System Memory mode
 #define MODE_UNKNOWN                    0x73  // Unknown running mode
 
-/* Transition Status (0x90-0x9F) */
-#define STATUS_JUMPING_TO_APP           0x90  // Jumping to application
+/* Mode Jump Status (0x50-0x6F) */
+#define MODE_JUMP_REQUESTED             0x52  // Mode jump request received
+#define MODE_JUMP_PREPARING             0x53  // Preparing for mode jump
+#define MODE_JUMP_SUCCESS               0x54  // Mode jump successful
+#define MODE_JUMP_FAILED                0x55  // Mode jump failed
+#define MODE_INVALID_TARGET             0x56  // Invalid target mode
+#define MODE_JUMP_TIMEOUT               0x57  // Mode jump timeout
+
+/* Jump Magic Words */
+#define JUMP_REQUEST_MAGIC              0x12345678  // Magic word for jump request
+#define JUMP_INFO_MAGIC                 0xDEADBEEF  // Magic word for jump info
 
 /* Data Structures -----------------------------------------------------------*/
 
@@ -125,6 +130,42 @@ typedef struct {
     uint8_t  running_mode;                      /*!< Current running mode (0x70-0x73) */
     uint8_t  reserved[3];                       /*!< Reserved bytes for alignment */
 } __attribute__((packed)) Protocol_StatusReport_t;
+
+/**
+ * @brief Mode jump request data structure
+ */
+typedef struct {
+    uint8_t  target_mode;                       /*!< Target mode (0x70=Bootloader, 0x71=Application) */
+    uint8_t  jump_delay_ms;                     /*!< Jump delay time (milliseconds) */
+    uint16_t timeout_ms;                        /*!< Jump timeout time (milliseconds) */
+    uint32_t magic_word;                        /*!< Magic word (0x12345678) for security verification */
+} __attribute__((packed)) Protocol_JumpModeRequest_t;
+
+/**
+ * @brief Mode jump response data structure
+ */
+typedef struct {
+    uint8_t  current_mode;                      /*!< Current mode */
+    uint8_t  target_mode;                       /*!< Target mode */
+    uint8_t  jump_status;                       /*!< Jump status (0x52-0x57) */
+    uint8_t  result_code;                       /*!< Result code */
+    uint32_t uptime_before_jump;                /*!< Uptime before jump */
+    uint16_t estimated_jump_time;               /*!< Estimated jump time (milliseconds) */
+    uint8_t  reserved[2];                       /*!< Reserved bytes */
+} __attribute__((packed)) Protocol_JumpModeResponse_t;
+
+/**
+ * @brief Jump information structure for persistent storage
+ * Special memory region for jump information passing (0x20000000-0x2000000F)
+ */
+typedef struct {
+    uint32_t magic;                             /*!< 0xDEADBEEF (jump marker) */
+    uint8_t  source_mode;                       /*!< Mode before jump */
+    uint8_t  target_mode;                       /*!< Target mode */
+    uint8_t  jump_reason;                       /*!< Jump reason */
+    uint8_t  reserved;                          /*!< Reserved */
+    uint32_t timestamp;                         /*!< Jump timestamp */
+} __attribute__((packed)) Protocol_JumpInfo_t;
 
 /* Function Prototypes -------------------------------------------------------*/
 
@@ -217,10 +258,57 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length);
 bool Protocol_SendStatus(uint8_t status);
 
 /**
+ * @brief Process mode jump request
+ * @param request: Pointer to jump mode request data
+ * @retval true if request processed successfully, false otherwise
+ */
+bool Protocol_ProcessJumpRequest(const Protocol_JumpModeRequest_t* request);
+
+/**
+ * @brief Send mode jump response
+ * @param response: Pointer to jump mode response data
+ * @retval true if sent successfully, false otherwise
+ */
+bool Protocol_SendJumpResponse(const Protocol_JumpModeResponse_t* response);
+
+/**
+ * @brief Validate jump request (magic word and target mode)
+ * @param request: Pointer to jump mode request data
+ * @retval true if request is valid, false otherwise
+ */
+bool Protocol_ValidateJumpRequest(const Protocol_JumpModeRequest_t* request);
+
+/**
+ * @brief Write jump information to special memory region
+ * @param jump_info: Pointer to jump information structure
+ * @retval true if written successfully, false otherwise
+ */
+bool Protocol_WriteJumpInfo(const Protocol_JumpInfo_t* jump_info);
+
+/**
+ * @brief Read jump information from special memory region
+ * @param jump_info: Pointer to buffer to store jump information
+ * @retval true if read successfully and magic is valid, false otherwise
+ */
+bool Protocol_ReadJumpInfo(Protocol_JumpInfo_t* jump_info);
+
+/**
+ * @brief Clear jump information from special memory region
+ * @retval None
+ */
+void Protocol_ClearJumpInfo(void);
+
+/**
  * @brief Get current running mode
  * @retval Current running mode (MODE_BOOTLOADER, MODE_APPLICATION, etc.)
  */
 uint8_t Protocol_GetRunningMode(void);
+
+/**
+ * @brief Check and execute pending jump request (call from main loop)
+ * @retval None
+ */
+void Protocol_CheckPendingJump(void);
 
 #ifdef __cplusplus
 }

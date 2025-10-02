@@ -32,8 +32,8 @@ extern "C" {
 /* Compile-time Size and Address Checks -------------------------------------*/
 
 /* Check bootloader size constraint */
-#if (BOOTLOADER_SIZE > 0x2800)
-    #error "ERROR: Bootloader size exceeds 10KB (0x2800 bytes) limit!"
+#if (BOOTLOADER_SIZE > 0x4000)
+    #error "ERROR: Bootloader size exceeds 16KB (0x4000 bytes) limit!"
     #error "Current size would be larger than allowed constraint."
     #error "Please reduce code size or increase size limit."
 #endif
@@ -84,10 +84,10 @@ void Bootloader_PrintConstraints(void);
 /* Exported macros -----------------------------------------------------------*/
 
 /* Memory layout information macros */
-#define BOOTLOADER_SIZE_KB_STR      "10"
+#define BOOTLOADER_SIZE_KB_STR      "16"
 #define BOOTLOADER_START_ADDR_STR   "0x08000000"
-#define BOOTLOADER_END_ADDR_STR     "0x08002800"
-#define APPLICATION_START_ADDR_STR  "0x08002800"
+#define BOOTLOADER_END_ADDR_STR     "0x08004000"
+#define APPLICATION_START_ADDR_STR  "0x08004000"
 
 /* Version information */
 #define BOOTLOADER_CONSTRAINT_VERSION "1.0"

@@ -10,12 +10,33 @@
 #include "protocol.h"
 #include "uart.h"
 #include "flash_config.h"
+#include "bootloader_jump.h"
 #include "main.h"
+#include <stdbool.h>
+
+/* Private defines -----------------------------------------------------------*/
+#ifndef SystemCoreClock
+extern uint32_t SystemCoreClock;
+#endif
+
+#ifndef SRAM_BASE
+#define SRAM_BASE           0x20000000UL
+#endif
+
+#ifndef FLASH_PAGE_SIZE
+#define FLASH_PAGE_SIZE     1024UL    // STM32F103C8T6
+#endif
 
 /* Private variables ---------------------------------------------------------*/
 static uint32_t protocol_uptime_ms = 0;
 static uint8_t protocol_error_count = 0;
 static uint16_t protocol_last_command = 0;
+
+/* Jump request variables */
+static volatile bool jump_request_pending = false;
+static volatile uint8_t jump_target_mode = 0;
+static volatile uint32_t jump_request_time = 0;
+static volatile uint32_t jump_delay_ms = 0;
 
 /* Firmware version and build info */
 #define FIRMWARE_VERSION        0x00010000  // v1.0.0
@@ -326,6 +347,17 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
                 processed_any_frame = true;
                 break;
                 
+            case CMD_JUMP_TO_MODE:
+                // 检查数据长度是否足够
+                if (frame_length >= sizeof(Protocol_JumpModeRequest_t)) {
+                    Protocol_JumpModeRequest_t* request = (Protocol_JumpModeRequest_t*)frame_data;
+                    Protocol_ProcessJumpRequest(request);
+                } else {
+                    Protocol_SendErrorReport(ERROR_LENGTH);
+                }
+                processed_any_frame = true;
+                break;
+                
             default:
                 Protocol_SendErrorReport(ERROR_INVALID_CMD);
                 processed_any_frame = true;  // 无效命令也算"处理"了，避免污染后续数据
@@ -337,6 +369,26 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
     
     return processed_any_frame;  // 只有成功处理了至少一帧才返回true
     }
+
+/**
+ * @brief Check and execute pending jump request (call from main loop)
+ */
+void Protocol_CheckPendingJump(void)
+{
+    if (jump_request_pending) {
+        uint32_t current_time = HAL_GetTick();
+        
+        // 检查是否到了跳转时间
+        if ((current_time - jump_request_time) >= jump_delay_ms) {
+            jump_request_pending = false; // 清除标志位
+            
+            if (jump_target_mode == MODE_APPLICATION) {
+                // 在主循环中执行跳转，安全无中断冲突
+                Bootloader_JumpToApplication(APPLICATION_ADDRESS);
+            }
+        }
+    }
+}
 
 /**
  * @brief Send simple status
@@ -388,6 +440,173 @@ static uint8_t Protocol_GetResetReason(void)
     }
     
     return 0x00;  // Unknown reset
+}
+
+/* Jump-related function implementations -------------------------------------*/
+
+/**
+ * @brief Process mode jump request
+ */
+bool Protocol_ProcessJumpRequest(const Protocol_JumpModeRequest_t* request)
+{
+    Protocol_JumpModeResponse_t response;
+    Protocol_JumpInfo_t jump_info;
+    
+    if (request == NULL) {
+        return false;
+    }
+    
+    // 验证跳转请求
+    if (!Protocol_ValidateJumpRequest(request)) {
+        // 发送错误响应
+        response.current_mode = Protocol_GetRunningMode();
+        response.target_mode = request->target_mode;
+        response.jump_status = MODE_INVALID_TARGET;
+        response.result_code = ERROR_INVALID_CMD;
+        response.uptime_before_jump = HAL_GetTick();
+        response.estimated_jump_time = 0;
+        response.reserved[0] = 0;
+        response.reserved[1] = 0;
+        
+        Protocol_SendJumpResponse(&response);
+        return false;
+    }
+    
+    // 发送确认响应
+    response.current_mode = Protocol_GetRunningMode();
+    response.target_mode = request->target_mode;
+    response.jump_status = MODE_JUMP_REQUESTED;
+    response.result_code = STATUS_OK;
+    response.uptime_before_jump = HAL_GetTick();
+    response.estimated_jump_time = request->jump_delay_ms + 50; // 估计跳转时间
+    response.reserved[0] = 0;
+    response.reserved[1] = 0;
+    
+    // 设置跳转请求标志，延迟到主循环中执行
+    if (request->target_mode == MODE_APPLICATION) {
+        // 设置跳转标志位
+        jump_request_pending = true;
+        jump_target_mode = request->target_mode;
+        jump_request_time = HAL_GetTick();
+        jump_delay_ms = request->jump_delay_ms;
+    }
+    
+    Protocol_SendJumpResponse(&response);
+    
+    // 准备跳转信息
+    jump_info.magic = JUMP_INFO_MAGIC;
+    jump_info.source_mode = response.current_mode;
+    jump_info.target_mode = request->target_mode;
+    jump_info.jump_reason = 0x01; // Serial command jump
+    jump_info.reserved = 0;
+    jump_info.timestamp = HAL_GetTick();
+    
+    // 写入跳转信息到内存
+    Protocol_WriteJumpInfo(&jump_info);
+    
+    return true;
+}
+
+/**
+ * @brief Send mode jump response
+ */
+bool Protocol_SendJumpResponse(const Protocol_JumpModeResponse_t* response)
+{
+    if (response == NULL) {
+        return false;
+    }
+    
+    return Protocol_SendFrame(CMD_JUMP_RESPONSE, response->jump_status, 
+                             (const uint8_t*)response, sizeof(Protocol_JumpModeResponse_t));
+}
+
+/**
+ * @brief Validate jump request (magic word and target mode)
+ */
+bool Protocol_ValidateJumpRequest(const Protocol_JumpModeRequest_t* request)
+{
+    if (request == NULL) {
+        return false;
+    }
+    
+    // 验证魔法字
+    if (request->magic_word != JUMP_REQUEST_MAGIC) {
+        return false;
+    }
+    
+    // 验证目标模式
+    uint8_t current_mode = Protocol_GetRunningMode();
+    
+    // Bootloader只支持跳转到Application
+    if (current_mode == MODE_BOOTLOADER && request->target_mode == MODE_APPLICATION) {
+        // 检查Application是否有效
+        return Bootloader_CheckApplication(APPLICATION_ADDRESS);
+    }
+    
+    // 其他情况暂不支持
+    return false;
+}
+
+/**
+ * @brief Write jump information to special memory region
+ */
+bool Protocol_WriteJumpInfo(const Protocol_JumpInfo_t* jump_info)
+{
+    if (jump_info == NULL) {
+        return false;
+    }
+    
+    // 使用RAM起始地址附近的安全区域 (0x20000010-0x2000001F)
+    // 避开栈顶和中断向量表可能使用的区域
+    volatile Protocol_JumpInfo_t* jump_mem = (volatile Protocol_JumpInfo_t*)0x20000010;
+    
+    jump_mem->magic = jump_info->magic;
+    jump_mem->source_mode = jump_info->source_mode;
+    jump_mem->target_mode = jump_info->target_mode;
+    jump_mem->jump_reason = jump_info->jump_reason;
+    jump_mem->reserved = jump_info->reserved;
+    jump_mem->timestamp = jump_info->timestamp;
+    
+    return true;
+}
+
+/**
+ * @brief Read jump information from special memory region
+ */
+bool Protocol_ReadJumpInfo(Protocol_JumpInfo_t* jump_info)
+{
+    if (jump_info == NULL) {
+        return false;
+    }
+    
+    // 从RAM起始地址附近的安全区域读取 (0x20000010-0x2000001F)
+    volatile Protocol_JumpInfo_t* jump_mem = (volatile Protocol_JumpInfo_t*)0x20000010;
+    
+    // 检查魔法字
+    if (jump_mem->magic != JUMP_INFO_MAGIC) {
+        return false;
+    }
+    
+    jump_info->magic = jump_mem->magic;
+    jump_info->source_mode = jump_mem->source_mode;
+    jump_info->target_mode = jump_mem->target_mode;
+    jump_info->jump_reason = jump_mem->jump_reason;
+    jump_info->reserved = jump_mem->reserved;
+    jump_info->timestamp = jump_mem->timestamp;
+    
+    return true;
+}
+
+/**
+ * @brief Clear jump information from special memory region
+ */
+void Protocol_ClearJumpInfo(void)
+{
+    // 清除RAM起始地址附近的安全区域数据 (0x20000010-0x2000001F)
+    volatile uint32_t* jump_mem = (volatile uint32_t*)0x20000010;
+    for (int i = 0; i < 4; i++) {  // 清除16字节 (4 x 4字节)
+        jump_mem[i] = 0;
+    }
 }
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

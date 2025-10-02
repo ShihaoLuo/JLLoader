@@ -19,7 +19,7 @@ extern "C" {
 #include <stdbool.h>
 
 /* Exported constants --------------------------------------------------------*/
-#define APPLICATION_ADDRESS    0x08002800
+#define APPLICATION_ADDRESS    0x08004000
 #define STACK_POINTER_MASK     0x2FFE0000
 #define STACK_POINTER_VALID    0x20000000
 #define THUMB_BIT_MASK         0xFFFFFFFE

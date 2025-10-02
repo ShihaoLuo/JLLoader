@@ -108,28 +108,15 @@ int main(void)
   // Record bootloader start time
   bootloader_start_time = HAL_GetTick();
   
-  // Send system initialization status
+  // Send system ready status
   Protocol_SendStatus(STATUS_READY);
-  
-  // Send hardware status reports
-  Protocol_SendStatus(HW_CLOCK_OK);
-  Protocol_SendStatus(HW_UART_OK);
-  Protocol_SendStatus(HW_GPIO_OK);
-  Protocol_SendStatus(HW_TIMER_OK);
-  
-  // Send running mode status
-  Protocol_SendStatus(MODE_BOOTLOADER);
   
   // Send initial system and memory information
   Protocol_SendSystemInfo();
   Protocol_SendMemoryInfo();
   
-  // Verify bootloader constraints and send status
-  if (Flash_CheckBootloaderConstraints())
-  {
-    Protocol_SendStatus(MEM_CONSTRAINT_OK);
-  }
-  else
+  // Verify bootloader constraints
+  if (!Flash_CheckBootloaderConstraints())
   {
     Protocol_SendStatus(MEM_CONSTRAINT_ERR);
   }
@@ -146,6 +133,9 @@ int main(void)
       // Jump to application using the new modular function
       Bootloader_JumpToApplication(APPLICATION_ADDRESS);
     }
+    
+    // Check for pending jump requests from serial protocol
+    Protocol_CheckPendingJump();
     
     // Process any incoming protocol commands
     // Add your protocol handling here if needed
