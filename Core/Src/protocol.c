@@ -305,7 +305,8 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
         if (calculated_checksum != received_checksum) {
             Protocol_SendErrorReport(ERROR_CHECKSUM);
             offset += total_frame_length;
-            continue;  // 继续处理下一帧，但不标记为成功
+            processed_any_frame = true;  // 错误帧也算"处理"了，避免污染后续数据
+            continue;  // 继续处理下一帧
         }
         
         // 处理命令 - 只有到这里才算成功处理了一帧
@@ -327,7 +328,8 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
                 
             default:
                 Protocol_SendErrorReport(ERROR_INVALID_CMD);
-                break;  // 无效命令不算成功处理
+                processed_any_frame = true;  // 无效命令也算"处理"了，避免污染后续数据
+                break;
         }
         
         offset += total_frame_length;
