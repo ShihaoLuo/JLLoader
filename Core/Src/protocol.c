@@ -137,8 +137,8 @@ bool Protocol_SendFrame(uint8_t type, uint8_t status, const uint8_t* data, uint8
     }
 
     // 1. 创建一个足够大的缓冲区来手动构建帧
-    uint8_t frame_buffer[PROTOCOL_MIN_FRAME_LENGTH + PROTOCOL_MAX_DATA_LENGTH + 1];
-    uint16_t frame_size = PROTOCOL_MIN_FRAME_LENGTH + length + 1; // header, length, type, status, data, checksum
+    uint8_t frame_buffer[PROTOCOL_MIN_FRAME_LENGTH + PROTOCOL_MAX_DATA_LENGTH];
+    uint16_t frame_size = PROTOCOL_MIN_FRAME_LENGTH + length; // header, length, type, status, data, checksum (已包含在PROTOCOL_MIN_FRAME_LENGTH中)
 
     // 2. 填充帧的元数据
     frame_buffer[0] = PROTOCOL_HEADER_MCU_TO_PC;
@@ -149,7 +149,7 @@ bool Protocol_SendFrame(uint8_t type, uint8_t status, const uint8_t* data, uint8
     // 3. 复制数据负载
     if (data != NULL && length > 0) {
         for (int i = 0; i < length; i++) {
-            frame_buffer[PROTOCOL_MIN_FRAME_LENGTH + i] = data[i];
+            frame_buffer[4 + i] = data[i]; // 数据从索引4开始 (Header[0] + Length[1] + Type[2] + Status[3] + Data[4...])
         }
     }
 
