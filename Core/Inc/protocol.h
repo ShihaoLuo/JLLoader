@@ -39,6 +39,8 @@ extern "C" {
 #define CMD_JUMP_TO_MODE                0x13  // Host → MCU: Mode jump command
 #define CMD_ERASE_FLASH                 0x20  // Erase Flash memory
 #define CMD_ERASE_RESPONSE              0x21  // Erase Flash response
+#define CMD_WRITE_FLASH                 0x30  // Host → MCU: Write Flash memory
+#define CMD_WRITE_RESPONSE              0x31  // MCU → Host: Write Flash response
 
 /* Status Codes: System & Error (0x00-0x2F) */
 #define STATUS_OK                       0x00    /*!< Operation successful */
@@ -59,6 +61,10 @@ extern "C" {
 #define STATUS_ERASE_ADDR_INVALID       0x42    /*!< Invalid start address (not page-aligned or out of range) */
 #define STATUS_ERASE_COUNT_INVALID      0x43    /*!< Invalid page count (zero or exceeds Flash size) */
 #define STATUS_ERASE_PROTECTED          0x44    /*!< Attempted to erase a write-protected area (e.g., Bootloader) */
+#define STATUS_WRITE_COMPLETED          0x45    /*!< Flash write operation completed successfully */
+#define STATUS_WRITE_ERROR              0x46    /*!< Flash write operation failed */
+#define ERROR_INVALID_ADDRESS           0x42    /*!< Alias for invalid address (reuse ERASE_ADDR_INVALID) */
+#define ERROR_WRITE_PROTECTED           0x44    /*!< Alias for write-protected area (reuse ERASE_PROTECTED) */
 
 /* Status Codes: Memory & Constraints (0x30-0x3F) - Renumbered for clarity */
 #define MEM_BOOTLOADER_OK               0x30  // Bootloader area OK
@@ -167,6 +173,25 @@ typedef struct {
     uint16_t pages_erased;       /*!< Number of pages successfully erased */
     uint32_t duration_ms;        /*!< Duration of the erase operation in milliseconds */
 } __attribute__((packed)) Protocol_EraseResponse_t;
+
+/**
+ * @brief Flash write request data structure (Host -> MCU)
+ */
+typedef struct {
+    uint32_t start_address;      /*!< Write start address, must be even (2-byte aligned) */
+    uint8_t  data_length;        /*!< Actual data length to write, range 2~100, must be even */
+    uint8_t  data[100];          /*!< Data to be written */
+} __attribute__((packed)) Protocol_WriteRequest_t;
+
+/**
+ * @brief Flash write response data structure (MCU -> Host)
+ */
+typedef struct {
+    uint8_t  status;             /*!< Write result status code */
+    uint32_t start_address;      /*!< Actual write start address */
+    uint32_t written_size;       /*!< Actual bytes written */
+    uint32_t duration_ms;        /*!< Write operation duration in milliseconds */
+} __attribute__((packed)) Protocol_WriteResponse_t;
 
 /**
  * @brief Mode jump response data structure

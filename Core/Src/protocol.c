@@ -47,6 +47,7 @@ static volatile uint32_t jump_delay_ms = 0;
 static uint32_t Protocol_GetBuildTimestamp(void);
 static uint8_t Protocol_GetResetReason(void);
 static bool Protocol_ProcessEraseRequest(const Protocol_EraseRequest_t* request);
+static bool Protocol_ProcessWriteRequest(const Protocol_WriteRequest_t* request);
 
 /**
  * @brief Get current running mode based on PC (Program Counter) address
@@ -383,6 +384,16 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
                 }
                 processed_any_frame = true;
                 break;
+
+            case CMD_WRITE_FLASH:
+                // 最小长度检查: start_address(4) + data_length(1) + 至少2字节数据 = 7字节
+                if (frame_length >= 7) {
+                    Protocol_ProcessWriteRequest((const Protocol_WriteRequest_t*)frame_data);
+                } else {
+                    Protocol_SendErrorReport(ERROR_LENGTH);
+                }
+                processed_any_frame = true;
+                break;
                 
             default:
                 Protocol_SendErrorReport(ERROR_INVALID_CMD);
@@ -537,6 +548,69 @@ static bool Protocol_ProcessEraseRequest(const Protocol_EraseRequest_t* request)
     response.duration_ms = end_time - start_time;
 
     return Protocol_SendFrame(CMD_ERASE_RESPONSE, response.erase_status, (const uint8_t*)&response, sizeof(response));
+}
+
+/**
+ * @brief Process Flash write request
+ * @param request Pointer to write request structure
+ * @retval true if response sent successfully, false otherwise
+ */
+static bool Protocol_ProcessWriteRequest(const Protocol_WriteRequest_t* request)
+{
+    if (request == NULL) {
+        return Protocol_SendErrorReport(ERROR_INVALID_PARAM);
+    }
+
+    uint32_t start_time = HAL_GetTick();
+    HAL_StatusTypeDef write_status;
+    Protocol_WriteResponse_t response;
+
+    response.start_address = request->start_address;
+    response.written_size = 0;
+
+    // Validation 1: Check if data_length is valid (2~100, even number)
+    if (request->data_length < 2 || request->data_length > 100 || (request->data_length % 2) != 0) {
+        response.status = ERROR_LENGTH;
+        response.duration_ms = HAL_GetTick() - start_time;
+        return Protocol_SendFrame(CMD_WRITE_RESPONSE, response.status, (const uint8_t*)&response, sizeof(response));
+    }
+
+    // Validation 2: Check if address is even (2-byte aligned)
+    if ((request->start_address % 2) != 0) {
+        response.status = ERROR_INVALID_ADDRESS;
+        response.duration_ms = HAL_GetTick() - start_time;
+        return Protocol_SendFrame(CMD_WRITE_RESPONSE, response.status, (const uint8_t*)&response, sizeof(response));
+    }
+
+    // Validation 3: Check if address is in bootloader area
+    if (request->start_address < APPLICATION_START_ADDRESS) {
+        response.status = ERROR_WRITE_PROTECTED;
+        response.duration_ms = HAL_GetTick() - start_time;
+        return Protocol_SendFrame(CMD_WRITE_RESPONSE, response.status, (const uint8_t*)&response, sizeof(response));
+    }
+
+    // Validation 4: Check if write would exceed flash bounds
+    if (request->start_address + request->data_length - 1 > APPLICATION_END_ADDRESS) {
+        response.status = ERROR_INVALID_ADDRESS;
+        response.duration_ms = HAL_GetTick() - start_time;
+        return Protocol_SendFrame(CMD_WRITE_RESPONSE, response.status, (const uint8_t*)&response, sizeof(response));
+    }
+
+    // Call the Flash write function (handles cross-page writes automatically)
+    write_status = Flash_WriteData(request->start_address, request->data, request->data_length);
+
+    if (write_status == HAL_OK) {
+        response.status = STATUS_OK;
+        response.written_size = request->data_length;
+    } else {
+        response.status = STATUS_WRITE_ERROR;
+        response.written_size = 0;
+    }
+
+    uint32_t end_time = HAL_GetTick();
+    response.duration_ms = end_time - start_time;
+
+    return Protocol_SendFrame(CMD_WRITE_RESPONSE, response.status, (const uint8_t*)&response, sizeof(response));
 }
 
 

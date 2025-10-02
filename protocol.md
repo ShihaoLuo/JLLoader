@@ -1,3 +1,51 @@
+## Flash写入指令扩展
+
+### CMD_WRITE_FLASH (0x30)
+
+用于将数据（最大100字节，且为偶数）写入指定Flash地址。
+
+- **指令类型**：`CMD_WRITE_FLASH` (`0x30`)
+- **方向**：PC → MCU
+- **数据结构**：
+    - `start_address` (4字节)：写入起始地址，最低位必须为偶数（即地址2字节对齐）。
+    - `data_length` (1字节)：实际写入数据长度，范围2~100，且必须为偶数。
+    - `data_type` (1字节)：字符型或数字型标识（如 'A'=字符，'N'=数字）。
+    - `data` (data_length字节)：待写入的数据。
+
+#### 约束说明
+1. **写入起始地址最低位必须为偶数**：即`start_address % 2 == 0`。
+2. **写入数据长度最大100字节，且必须为偶数**。
+3. **data_type字段用于指明数据内容类型（字符或数字）**。
+
+#### 数据帧示例
+```
++--------+--------+--------+--------+--------------------------+----------+
+| HEADER | LENGTH |  TYPE  | STATUS |   DATA (4+1+1+N字节)     | CHECKSUM |
++--------+--------+--------+--------+--------------------------+----------+
+```
+- `DATA`字段：
+    - 前4字节为`start_address`（小端序）
+    - 第5字节为`data_length`
+    - 第6字节为`data_type`（如 'A' 或 'N'）
+    - 后N字节为实际写入数据
+
+#### 响应
+- **指令类型**：`CMD_WRITE_RESPONSE` (`0x31`)
+- **方向**：MCU → PC
+- **数据结构**：
+    - `status` (1字节)：写入结果状态码
+    - `start_address` (4字节)：实际写入的起始地址
+    - `written_size` (1字节)：实际写入的字节数
+    - `duration_ms` (4字节)：写入操作耗时（毫秒）
+
+- **状态码**：
+    - `STATUS_OK` (`0x00`)：写入成功
+    - `ERROR_INVALID_ADDRESS` (`0x42`)：地址不合法
+    - `ERROR_LENGTH` (`0x12`)：数据长度错误
+    - 其他错误码见协议定义
+
+---
+
 # STM32 Bootloader & App 串口通信协议规范
 
 ## 1. 概述
@@ -67,6 +115,8 @@ Bootloader 和 Application 固件均遵循此协议，实现了统一的通信�
 | `0x05` | `CMD_JUMP_RESPONSE` | MCU → PC | 对 `CMD_JUMP_TO_MODE` 的响应，报告模式跳转的结果。 |
 | `0x20` | `CMD_ERASE_FLASH` | PC → MCU | 请求擦除指定区域的Flash。 |
 | `0x21` | `CMD_ERASE_RESPONSE` | MCU → PC | 对 `CMD_ERASE_FLASH` 的响应，报告擦除结果。 |
+| `0x30` | `CMD_WRITE_FLASH` | PC → MCU | 请求写入固定100KB数据到指定Flash地址。 |
+| `0x31` | `CMD_WRITE_RESPONSE` | MCU → PC | 对 `CMD_WRITE_FLASH` 的响应，报告写入结果。 |
 
 ## 5. 状态码 (STATUS)
 
@@ -177,6 +227,36 @@ Bootloader 和 Application 固件均遵循此协议，实现了统一的通信�
     } __attribute__((packed));
     ```
 
+### `CMD_WRITE_FLASH` (0x30)
+
+-   **描述:** 上位机请求将数据写入Flash。**支持可变长度数据传输（2~100字节）**。
+-   **结构体 (`Protocol_WriteRequest_t`):**
+    ```c
+    struct {
+        uint32_t start_address;      // 写入起始地址，必须为偶数（2字节对齐）
+        uint8_t  data_length;        // 实际写入数据长度，范围2~100，且必须为偶数
+        uint8_t  data[data_length];  // 待写入的数据（可变长度，实际只传输data_length字节）
+    } __attribute__((packed));
+    ```
+    
+    **注意：**
+    - 协议帧的LENGTH字段 = 4 (start_address) + 1 (data_length) + data_length
+    - 例如写入10字节数据时，LENGTH = 4 + 1 + 10 = 15
+    - data字段在C结构体中定义为`uint8_t data[100]`以支持最大长度，但实际传输时只发送data_length指定的字节数
+
+### `CMD_WRITE_RESPONSE` (0x31)
+
+-   **描述:** 设备完成写入操作后的响应。
+-   **结构体 (`Protocol_WriteResponse_t`):**
+    ```c
+    struct {
+        uint8_t  status;             // 写入结果状态码
+        uint32_t start_address;      // 实际写入的起始地址
+        uint32_t written_size;       // 实际写入的字节数
+        uint32_t duration_ms;        // 写入操作耗时（毫秒）
+    } __attribute__((packed));
+    ```
+
 ## 7. 通信流程示例
 
 ### 示例：心跳检测
@@ -203,11 +283,11 @@ Bootloader 和 Application 固件均遵循此协议，实现了统一的通信�
 ### 示例：Flash擦除
 
 1.  **PC → MCU:** 上位机请求从地址 `0x08004000` 开始，擦除 `10` 个Flash页面。
-    -   **Frame:** `AA 06 20 00 00 40 00 08 0A 00 8B`
+    -   **Frame:** `AA 06 20 00 00 40 00 08 0A 00 87`
     -   **解析:**
         -   `AA`: PC发往MCU。
         -   `06`: 数据长度为6字节 (`start_page_address` 4字节 + `page_count` 2字节)。
-        -   `20`: 命令类型为 `CMD_ERASE_FLASH`。
+        -   `20`: 指令类型为 `CMD_ERASE_FLASH`。
         -   `00`: 状态码，请求时通常为0。
         -   `00 40 00 08`: 数据，起始地址 `0x08004000` (小端模式)。
         -   `0A 00`: 数据，页数 `10` (小端模式)。

@@ -99,6 +99,7 @@ uint32_t Flash_GetApplicationMaxSize(void);
 
 /* Flash Operation Functions */
 HAL_StatusTypeDef Flash_ErasePages(uint32_t start_address, uint16_t page_count);
+HAL_StatusTypeDef Flash_WriteData(uint32_t address, const uint8_t* data, uint8_t length);
 
 /* Address Validation Functions */
 uint8_t Flash_IsBootloaderAddress(uint32_t address);

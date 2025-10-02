@@ -226,3 +226,75 @@ HAL_StatusTypeDef Flash_ErasePages(uint32_t start_address, uint16_t page_count)
 
     return status;
 }
+
+/**
+ * @brief Write data to Flash memory with cross-page handling
+ * @param address The starting address to write. Must be even (2-byte aligned) for half-word programming.
+ * @param data Pointer to data buffer to write
+ * @param length Length of data to write in bytes. Must be even.
+ * @return HAL_StatusTypeDef: HAL_OK on success, HAL_ERROR on failure.
+ */
+HAL_StatusTypeDef Flash_WriteData(uint32_t address, const uint8_t* data, uint8_t length)
+{
+    // Validate parameters
+    if (data == NULL || length == 0 || (length % 2) != 0) {
+        return HAL_ERROR; // Data pointer is NULL, length is 0, or length is not even
+    }
+
+    // Check if address is even (2-byte aligned for half-word programming)
+    if ((address % 2) != 0) {
+        return HAL_ERROR; // Address must be even
+    }
+
+    // Security check: Do not allow writing to the bootloader area
+    if (address < APPLICATION_START_ADDRESS) {
+        return HAL_ERROR; // Trying to write to bootloader area
+    }
+
+    // Check if write would exceed flash bounds
+    if (address + length - 1 > APPLICATION_END_ADDRESS) {
+        return HAL_ERROR; // Write would exceed flash bounds
+    }
+
+    HAL_StatusTypeDef status = HAL_OK;
+
+    // Unlock the Flash
+    if (HAL_FLASH_Unlock() != HAL_OK) {
+        return HAL_ERROR;
+    }
+
+    // Clear any pending flags
+    __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
+
+    // Write data half-word (16-bit) at a time
+    uint32_t current_address = address;
+    const uint16_t* data_ptr = (const uint16_t*)data;
+    uint8_t half_words = length / 2;
+
+    for (uint8_t i = 0; i < half_words; i++) {
+        // Check if we're crossing a page boundary and need special handling
+        uint32_t current_page = current_address / FLASH_PAGE_SIZE;
+        uint32_t next_page = (current_address + 2) / FLASH_PAGE_SIZE;
+        
+        // Program the half-word
+        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, current_address, data_ptr[i]);
+        
+        if (status != HAL_OK) {
+            HAL_FLASH_Lock();
+            return status; // Write failed
+        }
+
+        // Verify the written data
+        if (*(uint16_t*)current_address != data_ptr[i]) {
+            HAL_FLASH_Lock();
+            return HAL_ERROR; // Verification failed
+        }
+
+        current_address += 2;
+    }
+
+    // Lock the Flash
+    HAL_FLASH_Lock();
+
+    return status;
+}
