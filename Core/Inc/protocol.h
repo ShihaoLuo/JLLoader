@@ -310,6 +310,12 @@ uint8_t Protocol_GetRunningMode(void);
  */
 void Protocol_CheckPendingJump(void);
 
+/**
+ * @brief 简化版本的跳转检查，不使用HAL_GetTick
+ * @retval None
+ */
+void Protocol_CheckPendingJump_Simple(void);
+
 #ifdef __cplusplus
 }
 #endif

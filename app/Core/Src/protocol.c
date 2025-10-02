@@ -16,17 +16,23 @@ static uint32_t protocol_uptime_ms = 0;
 static uint8_t protocol_error_count = 0;
 static uint16_t protocol_last_command = 0;
 
+/* Jump request variables */
+static volatile bool jump_request_pending = false;
+static volatile uint8_t jump_target_mode = 0;
+static volatile uint32_t jump_request_time = 0;
+static volatile uint32_t jump_delay_ms = 0;
+
 /* Firmware version and build info */
 #define FIRMWARE_VERSION        0x00010000  // v1.0.0
 #define BUILD_TIMESTAMP         (__DATE__ __TIME__)
 
 /* Memory layout constants for Application */
 #define BOOTLOADER_START_ADDRESS   0x08000000  // Bootloader base address
-#define BOOTLOADER_SIZE            0x2800      // 10KB for bootloader  
-#define APPLICATION_START_ADDRESS  0x08002800  // Application base address
-#define APPLICATION_MAX_SIZE       0x1D800     // 119KB for application (128KB - 10KB - 1KB)
-#define APPLICATION_END_ADDRESS    0x0801FFFF  // End of flash
-#define BOOTLOADER_END_ADDRESS     0x080027FF  // End of bootloader area
+#define BOOTLOADER_SIZE            0x4000      // 16KB for bootloader  
+#define APPLICATION_START_ADDRESS  0x08004000  // Application base address
+#define APPLICATION_MAX_SIZE       0xC000      // 48KB for application (64KB - 16KB)
+#define APPLICATION_END_ADDRESS    0x0800FFFF  // End of flash
+#define BOOTLOADER_END_ADDRESS     0x08003FFF  // End of bootloader area
 #define BOOTLOADER_PAGE_COUNT      10          // 10 pages of 1KB each
 // FLASH_PAGE_SIZE is defined in stm32f1xx_hal_flash_ex.h as 0x400U (1024 bytes)
 
@@ -332,6 +338,17 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
                 processed_any_frame = true;
                 break;
                 
+            case CMD_JUMP_TO_MODE:
+                if (frame_length >= sizeof(Protocol_JumpModeRequest_t)) {
+                    Protocol_JumpModeRequest_t* request = (Protocol_JumpModeRequest_t*)frame_data;
+                    Protocol_ProcessJumpRequest(request);
+                    processed_any_frame = true;
+                } else {
+                    Protocol_SendErrorReport(ERROR_LENGTH);
+                    processed_any_frame = true;
+                }
+                break;
+                
             default:
                 Protocol_SendErrorReport(ERROR_INVALID_CMD);
                 processed_any_frame = true;  // 无效命令也算"处理"了，避免污染后续数据
@@ -394,6 +411,181 @@ static uint8_t Protocol_GetResetReason(void)
     }
     
     return 0x00;  // Unknown reset
+}
+
+/**
+ * @brief Process jump mode request
+ */
+bool Protocol_ProcessJumpRequest(const Protocol_JumpModeRequest_t* request)
+{
+    if (request == NULL) {
+        return false;
+    }
+    
+    // 验证魔法字
+    if (request->magic_word != JUMP_REQUEST_MAGIC) {
+        Protocol_JumpModeResponse_t response = {
+            .current_mode = MODE_APPLICATION,
+            .target_mode = request->target_mode,
+            .jump_status = MODE_JUMP_FAILED,
+            .result_code = ERROR_INVALID_CMD,
+            .uptime_before_jump = HAL_GetTick(),
+            .estimated_jump_time = 0,
+            .reserved = {0, 0}
+        };
+        Protocol_SendJumpResponse(&response);
+        return false;
+    }
+    
+    // 验证目标模式 (App只能跳转到Bootloader)
+    if (request->target_mode != MODE_BOOTLOADER) {
+        Protocol_JumpModeResponse_t response = {
+            .current_mode = MODE_APPLICATION,
+            .target_mode = request->target_mode,
+            .jump_status = MODE_INVALID_TARGET,
+            .result_code = ERROR_INVALID_CMD,
+            .uptime_before_jump = HAL_GetTick(),
+            .estimated_jump_time = 0,
+            .reserved = {0, 0}
+        };
+        Protocol_SendJumpResponse(&response);
+        return false;
+    }
+    
+    // 发送确认响应
+    Protocol_JumpModeResponse_t response = {
+        .current_mode = MODE_APPLICATION,
+        .target_mode = MODE_BOOTLOADER,
+        .jump_status = MODE_JUMP_REQUESTED,
+        .result_code = STATUS_OK,
+        .uptime_before_jump = HAL_GetTick(),
+        .estimated_jump_time = request->jump_delay_ms,
+        .reserved = {0, 0}
+    };
+    Protocol_SendJumpResponse(&response);
+    
+    // 设置跳转挂起标志，在主循环中执行跳转
+    jump_request_pending = true;
+    jump_target_mode = request->target_mode;
+    jump_request_time = HAL_GetTick();
+    jump_delay_ms = request->jump_delay_ms;
+    
+    return true;
+}
+
+/**
+ * @brief Send jump mode response
+ */
+bool Protocol_SendJumpResponse(const Protocol_JumpModeResponse_t* response)
+{
+    if (response == NULL) {
+        return false;
+    }
+    
+    return Protocol_SendFrame(CMD_JUMP_RESPONSE, response->jump_status, 
+                             (const uint8_t*)response, sizeof(Protocol_JumpModeResponse_t));
+}
+
+/**
+ * @brief Reset system to bootloader (using bootloader's proven method)
+ */
+void Protocol_ResetToBootloader(void)
+{
+    typedef void (*pFunction)(void);
+    pFunction jump_to_bootloader;
+    uint32_t jump_address;
+    
+    // === 额外清理App特有的状态 ===
+    
+    // 0. 重置Flash访问状态
+    __HAL_FLASH_PREFETCH_BUFFER_DISABLE();
+    
+    // 1. 重置所有GPIO到默认状态（特别是PC13 LED）
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    
+    // 重置PC13到默认状态（输入、浮空）
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_13;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+    
+    // 2. 重置NVIC优先级组到默认
+    HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
+    
+    // === 完全参考bootloader的清理步骤 ===
+    
+    // 3. 禁用所有中断 (来自DisableInterrupts函数)
+    __disable_irq();
+    
+    // 4. 禁用SysTick完全
+    SysTick->CTRL = 0;
+    SysTick->LOAD = 0;
+    SysTick->VAL = 0;
+    
+    // 5. 完全重置NVIC中断状态
+    for (int i = 0; i < 8; i++) {
+        NVIC->ICER[i] = 0xFFFFFFFF;  // 禁用所有中断
+        NVIC->ICPR[i] = 0xFFFFFFFF;  // 清除所有挂起中断
+    }
+    
+    // 6. 重置所有外设 (来自ResetSystemPeripherals函数)
+    __HAL_RCC_APB1_FORCE_RESET();
+    __HAL_RCC_APB1_RELEASE_RESET();
+    __HAL_RCC_APB2_FORCE_RESET();
+    __HAL_RCC_APB2_RELEASE_RESET();
+    
+    // 7. 重置RCC到默认状态 (来自ResetRCC函数)
+    // 启用HSI
+    RCC->CR |= RCC_CR_HSION;
+    
+    // 等待HSI准备就绪
+    while(!(RCC->CR & RCC_CR_HSIRDY));
+    
+    // 重置CFGR寄存器
+    RCC->CFGR = 0x00000000;
+    
+    // 禁用HSE、CSS、PLL
+    RCC->CR &= ~(RCC_CR_HSEON | RCC_CR_CSSON | RCC_CR_PLLON);
+    
+    // 8. 重新映射中断向量表到bootloader地址
+    SCB->VTOR = BOOTLOADER_START_ADDRESS;
+    
+    // 9. 从bootloader地址设置新的堆栈指针
+    __set_MSP(*((volatile uint32_t*)BOOTLOADER_START_ADDRESS));
+    
+    // 10. 从bootloader地址+4获取复位处理程序地址
+    jump_address = *((volatile uint32_t*)(BOOTLOADER_START_ADDRESS + 4));
+    
+    // 11. 清除LSB确保正确的函数地址 (来自bootloader逻辑)
+    jump_to_bootloader = (pFunction)jump_address;
+    
+    // 12. 跳转到bootloader
+    jump_to_bootloader();
+    
+    // 此函数不应返回
+    while(1);
+}
+
+/**
+ * @brief Check and execute pending jump request (call from main loop)
+ */
+void Protocol_CheckPendingJump(void)
+{
+    if (jump_request_pending) {
+        uint32_t current_time = HAL_GetTick();
+        
+        // 检查是否到了跳转时间
+        if ((current_time - jump_request_time) >= jump_delay_ms) {
+            jump_request_pending = false; // 清除标志位
+            
+            if (jump_target_mode == MODE_BOOTLOADER) {
+                // 在主循环中执行跳转，安全无中断冲突
+                Protocol_ResetToBootloader();
+            }
+        }
+    }
 }
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

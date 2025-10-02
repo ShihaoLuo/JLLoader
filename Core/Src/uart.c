@@ -210,18 +210,21 @@ static void UART_ProcessCompleteData(void)
   */
 void UART_StartInterruptReceive(void)
 {
-  if (!interrupt_enabled) {
-    // 清空接收缓冲区 - 直接赋值初始化，无需string.h
-    rx_buffer.head = 0;
-    rx_buffer.tail = 0;
-    rx_buffer.count = 0;
-    rx_buffer.data_ready = false;
-    rx_buffer.last_receive_time = 0;
-    
-    // 启动中断接收
-    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
-    interrupt_enabled = true;
-  }
+  // 强制重新配置中断，解决跳转后中断失效问题
+  HAL_NVIC_DisableIRQ(USART1_IRQn);
+  HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(USART1_IRQn);
+  
+  // 清空接收缓冲区 - 直接赋值初始化，无需string.h
+  rx_buffer.head = 0;
+  rx_buffer.tail = 0;
+  rx_buffer.count = 0;
+  rx_buffer.data_ready = false;
+  rx_buffer.last_receive_time = 0;
+  
+  // 启动中断接收
+  HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+  interrupt_enabled = true;
 }
 
 /**

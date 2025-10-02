@@ -58,7 +58,7 @@ void MX_GPIO_Init(void);
 void MX_TIM4_Init(void);
 
 /* USER CODE BEGIN EFP */
-
+void LED_TurnOff(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

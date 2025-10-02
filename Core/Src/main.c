@@ -48,6 +48,7 @@
 
 /* USER CODE BEGIN PV */
 static uint32_t bootloader_start_time = 0;
+static uint32_t led_last_toggle_time = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -96,6 +97,9 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
   
+  // Turn off LED (PC13 is active-low, so SET turns it off)
+  LED_TurnOff();
+  
   // Initialize protocol module
   Protocol_Init();
   
@@ -104,6 +108,9 @@ int main(void)
   
   // Start UART interrupt reception
   UART_StartInterruptReceive();
+  
+  // 强制重新配置关键中断（解决跳转后中断失效问题）
+  __enable_irq();  // 确保全局中断开启
   
   // Record bootloader start time
   bootloader_start_time = HAL_GetTick();
@@ -127,12 +134,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    // Check if 10 seconds have elapsed
-    if ((HAL_GetTick() - bootloader_start_time) >= BOOTLOADER_TIMEOUT_MS)
-    {
-      // Jump to application using the new modular function
-      Bootloader_JumpToApplication(APPLICATION_ADDRESS);
-    }
+    uint32_t current_time = HAL_GetTick();
+    
+    // // Check if 10 seconds have elapsed
+    // if ((current_time - bootloader_start_time) >= BOOTLOADER_TIMEOUT_MS)
+    // {
+    //   // Jump to application using the new modular function
+    //   Bootloader_JumpToApplication(APPLICATION_ADDRESS);
+    // }
     
     // Check for pending jump requests from serial protocol
     Protocol_CheckPendingJump();
@@ -141,7 +150,8 @@ int main(void)
     // Add your protocol handling here if needed
     
     // Small delay to prevent excessive CPU usage
-    HAL_Delay(1);
+    HAL_Delay(100);
+    
     /* USER CODE END WHILE */
   }
   /* USER CODE END 3 */

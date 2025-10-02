@@ -391,6 +391,32 @@ void Protocol_CheckPendingJump(void)
 }
 
 /**
+ * @brief 简化版本的跳转检查，不使用HAL_GetTick
+ */
+void Protocol_CheckPendingJump_Simple(void)
+{
+    static uint32_t jump_delay_counter = 0;
+    
+    if (jump_request_pending) {
+        jump_delay_counter++;
+        
+        // 简单计数延迟，大约相当于指定的延迟时间
+        // 假设每次调用间隔约0.1ms，所以 jump_delay_ms * 10 次调用
+        if (jump_delay_counter >= (jump_delay_ms * 10)) {
+            jump_request_pending = false; // 清除标志位
+            jump_delay_counter = 0;
+            
+            if (jump_target_mode == MODE_APPLICATION) {
+                // 在主循环中执行跳转，安全无中断冲突
+                Bootloader_JumpToApplication(APPLICATION_ADDRESS);
+            }
+        }
+    } else {
+        jump_delay_counter = 0; // 重置计数器
+    }
+}
+
+/**
  * @brief Send simple status
  */
 bool Protocol_SendStatus(uint8_t status)

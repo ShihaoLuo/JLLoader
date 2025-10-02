@@ -6,6 +6,7 @@
 
 #include "main.h"
 #include "app_init.h"
+#include "protocol.h"
 #include <stdint.h>
 
 /* 私有变量 */
@@ -28,12 +29,18 @@ int main(void)
     {
         uint32_t current_time = HAL_GetTick();
         
+        /* 检查挂起的跳转请求 */
+        Protocol_CheckPendingJump();
+        
         /* 检查是否到达闪烁时间(2秒) */
         if ((current_time - last_blink_time) >= LED_BLINK_DELAY)
         {
             App_LED_Toggle();
             last_blink_time = current_time;
         }
+        
+        /* 短暂延迟 */
+        HAL_Delay(1);
     }
 }
 

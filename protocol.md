@@ -704,3 +704,121 @@ int main(void) {
 2. **跳转失败**: 验证APPLICATION_ADDRESS和应用程序有效性
 3. **系统挂起**: 确认跳转函数中无UART发送操作
 4. **协议错误**: 验证魔法字(0x12345678)和校验和计算
+
+## Application端串口跳转实现
+
+### 实现方案
+Application端使用**系统复位**方式实现跳转，直接在协议处理函数中执行：
+
+```c
+bool Protocol_ProcessJumpRequest(const Protocol_JumpModeRequest_t* request) {
+    // 验证请求...
+    
+    // 发送确认响应
+    Protocol_SendJumpResponse(&response);
+    
+    // 简短延迟确保响应发送完成
+    HAL_Delay(request->jump_delay_ms);
+    
+    // 直接执行系统复位
+    Protocol_ResetToBootloader();
+    
+    return true; // 此行不会执行到
+}
+
+void Protocol_ResetToBootloader(void) {
+    HAL_NVIC_SystemReset(); // 直接复位，无需标志位
+}
+```
+
+### 实现特点
+1. **极简设计**: 无需标志位和主循环检查，直接执行复位
+2. **即时响应**: 收到命令后立即处理并复位
+3. **可靠执行**: 系统复位确保100%成功跳转
+4. **统一接口**: 与bootloader端使用相同的协议接口
+
+### 主要修改文件
+
+#### app/Core/Inc/protocol.h
+- 添加跳转命令和状态定义
+- 添加跳转数据结构
+- 添加跳转处理函数声明
+
+#### app/Core/Src/protocol.c
+- 更新内存布局配置(16KB bootloader)
+- 添加跳转标志变量
+- 实现跳转处理逻辑:
+  ```c
+  // 命令处理中添加
+  case CMD_JUMP_TO_MODE:
+      if (frame_length >= sizeof(Protocol_JumpModeRequest_t)) {
+          Protocol_JumpModeRequest_t* request = (Protocol_JumpModeRequest_t*)frame_data;
+          Protocol_ProcessJumpRequest(request);
+      }
+      break;
+  ```
+
+#### app/Core/Src/main.c
+- 添加协议头文件包含
+- 保持简洁的主循环，无需跳转检查:
+  ```c
+  while (1) {
+      // LED闪烁逻辑...
+      HAL_Delay(1);  // 简单延迟即可
+  }
+  ```
+
+### Application跳转流程
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  接收跳转命令    │───▶│   验证并确认     │───▶│   直接复位       │
+│                │    │                │    │                │
+│ CMD_JUMP_TO_MODE│    │ 发送确认响应     │    │ HAL_NVIC_       │
+│ target=0x70     │    │ HAL_Delay()     │    │ SystemReset()   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### 跳转命令示例
+
+#### 从Application跳转到Bootloader
+```
+发送: AA 08 13 00 70 32 D0 07 78 56 34 12 [CS]
+```
+- `70`: target_mode (MODE_BOOTLOADER)
+- `32`: jump_delay_ms (50ms)
+- `D0 07`: timeout_ms (2000ms)
+- `78 56 34 12`: magic_word (0x12345678)
+
+#### 预期响应和行为
+```
+响应: BB 0C 05 52 [跳转确认数据] CS
+行为: 延迟指定时间后执行HAL_NVIC_SystemReset()
+结果: 系统立即重启，重新进入bootloader模式
+```
+
+### 验证步骤
+1. **编译烧录**: 确保app和bootloader都使用16KB配置
+2. **启动验证**: 确认app正常运行(LED闪烁)
+3. **跳转测试**: 发送跳转命令，验证系统复位
+4. **模式验证**: 确认复位后重新进入bootloader模式
+
+### 优势对比
+
+| 方案 | Bootloader→App | App→Bootloader |
+|------|----------------|----------------|
+| 跳转方式 | 直接跳转 | 系统复位 |
+| 复杂度 | 中等 | 极简 |
+| 可靠性 | 高 | 极高 |
+| 执行方式 | 标志位+主循环 | 直接执行 |
+| 状态保持 | 可选 | 完全清除 |
+| 调试友好 | 一般 | 受限 |
+
+### 注意事项
+1. **内存配置**: 确保app和bootloader内存配置一致
+2. **复位行为**: 复位后所有状态丢失，无法保持会话
+3. **时序控制**: 通过HAL_Delay()确保响应发送完成再复位
+4. **错误处理**: 无效命令返回相应错误状态
+5. **即时执行**: 无需主循环检查，收到命令后直接处理
+
+Application端的串口跳转实现极其简洁，直接在协议处理中执行复位，是最简单可靠的解决方案。

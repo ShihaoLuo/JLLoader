@@ -42,6 +42,10 @@ extern "C" {
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
 
+/* LED configuration for bootloader status indication */
+#define LED_PIN          GPIO_PIN_13
+#define LED_PORT         GPIOC
+
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
