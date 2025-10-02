@@ -22,7 +22,7 @@
 #include "uart.h"
 #include "main.h"
 #include "protocol.h"
-#include "stm32f1xx_hal_uart.h"
+#include "stm32f1xx_hal.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -170,7 +170,7 @@ static void UART_AddByteToBuffer(uint8_t byte)
 }
 
 /**
-  * @brief  处理接收完成的数据（1ms后没有新数据）
+  * @brief  处理接收完成的数据（智能版本：保留不完整数据）
   * @param  None
   * @retval None
   */
@@ -180,20 +180,27 @@ static void UART_ProcessCompleteData(void)
     uint8_t temp_buffer[UART_RX_BUFFER_SIZE];
     uint16_t data_length = 0;
     
-    // 从环形缓冲区读取所有数据
-    while (rx_buffer.count > 0) {
-      temp_buffer[data_length++] = rx_buffer.buffer[rx_buffer.tail];
-      rx_buffer.tail = (rx_buffer.tail + 1) % UART_RX_BUFFER_SIZE;
-      rx_buffer.count--;
+    // 复制数据到临时缓冲区（不立即修改原缓冲区）
+    uint16_t temp_tail = rx_buffer.tail;
+    uint16_t temp_count = rx_buffer.count;
+    while (temp_count > 0) {
+      temp_buffer[data_length++] = rx_buffer.buffer[temp_tail];
+      temp_tail = (temp_tail + 1) % UART_RX_BUFFER_SIZE;
+      temp_count--;
     }
     
-    // 立即将数据传递给协议解析函数进行处理
+    // 尝试处理数据
     if (data_length > 0) {
-      Protocol_ProcessReceivedData(temp_buffer, data_length);
+      bool processed = Protocol_ProcessReceivedData(temp_buffer, data_length);
+      
+      if (processed) {
+        // 成功处理了至少一帧，清空缓冲区
+        rx_buffer.tail = rx_buffer.head;
+        rx_buffer.count = 0;
+        rx_buffer.data_ready = false;
+      }
+      // 如果没有处理任何完整帧，保留数据在缓冲区中
     }
-    
-    // 重置标志
-    rx_buffer.data_ready = false;
   }
 }
 
@@ -242,10 +249,10 @@ void UART_IRQHandler(void)
     // 将接收到的字节添加到缓冲区
     UART_AddByteToBuffer(rx_byte);
     
-    // 重新启动下一字节的接收（先启动接收，再处理数据）
+    // 重新启动下一字节的接收
     HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
     
-    // 每次接收到字节都尝试处理完整的协议帧
+    // 每收到一个字节都尝试处理，让协议解析器自己判断数据完整性
     UART_ProcessReceivedData();
   }
 }
@@ -290,15 +297,23 @@ uint16_t UART_GetReceivedData(uint8_t* data, uint16_t max_size)
 }
 
 /**
-  * @brief  处理接收到的数据（检查并立即处理数据）
+  * @brief  处理接收到的数据（检查并立即处理数据，改进版）
   * @param  None
   * @retval None
   */
 static void UART_ProcessReceivedData(void)
 {
-  // 检查是否有完整的数据包并立即处理
-  if (UART_IsDataReady()) {
+  // 只有当有足够数据时才尝试处理
+  if (rx_buffer.count >= 5 && UART_IsDataReady()) {
     UART_ProcessCompleteData();
+  }
+  
+  // 超时保护：如果数据在缓冲区停留超过100ms，强制清空
+  if (rx_buffer.count > 0 && 
+      (HAL_GetTick() - rx_buffer.last_receive_time) > 100) {
+    rx_buffer.tail = rx_buffer.head;
+    rx_buffer.count = 0;
+    rx_buffer.data_ready = false;
   }
 }
 

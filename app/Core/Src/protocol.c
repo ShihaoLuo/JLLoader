@@ -254,6 +254,7 @@ bool Protocol_ProcessCommand(uint8_t command)
 
 /**
  * @brief Process received data block (for interrupt mode)
+ * @return true if processed any complete frame, false otherwise
  */
 bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
 {
@@ -267,7 +268,7 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
     }
     
     uint16_t offset = 0;
-    bool result = true;
+    bool processed_any_frame = false;  // 跟踪是否处理了任何完整帧
     
     // 处理接收到的数据中可能包含的多个帧
     while (offset < length) {
@@ -278,7 +279,7 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
         
         // 检查是否还有足够的数据构成一个完整帧
         if (offset + PROTOCOL_MIN_FRAME_LENGTH > length) {
-            break;
+            break;  // 数据不完整，等待更多数据
         }
         
         // 解析帧
@@ -292,7 +293,7 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
         
         // 检查是否有完整帧
         if (offset + total_frame_length > length) {
-            break;
+            break;  // 数据不完整，等待更多数据
         }
         
         // 获取数据和校验和
@@ -309,35 +310,36 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
         // 验证校验和
         if (calculated_checksum != received_checksum) {
             Protocol_SendErrorReport(ERROR_CHECKSUM);
-            result = false;
             offset += total_frame_length;
-            continue;
+            continue;  // 继续处理下一帧，但不标记为成功
         }
         
-        // 处理命令
+        // 处理命令 - 只有到这里才算成功处理了一帧
         switch (type) {
             case CMD_GET_INFO:
                 Protocol_SendSystemInfo();
+                processed_any_frame = true;
                 break;
                 
             case CMD_GET_MEMORY:
                 Protocol_SendMemoryInfo();
+                processed_any_frame = true;
                 break;
                 
             case CMD_HEARTBEAT:
                 Protocol_SendStatusReport(STATUS_IDLE);
+                processed_any_frame = true;
                 break;
                 
             default:
                 Protocol_SendErrorReport(ERROR_INVALID_CMD);
-                result = false;
-                break;
+                break;  // 无效命令不算成功处理
         }
         
         offset += total_frame_length;
     }
     
-    return result;
+    return processed_any_frame;  // 只有成功处理了至少一帧才返回true
 }
 
 /**

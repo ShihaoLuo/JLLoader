@@ -1,0 +1,69 @@
+# STM32 项目 - 编译生成文件忽略规则
+
+# MDK-ARM Keil 编译输出
+MDK-ARM/**/
+!MDK-ARM/*.uvprojx
+!MDK-ARM/*.uvoptx
+!MDK-ARM/*.uvguix.*
+!MDK-ARM/startup_*.s
+!MDK-ARM/DebugConfig/
+
+# 编译生成的文件
+*.o
+*.d
+*.axf
+*.hex
+*.bin
+*.elf
+*.map
+*.htm
+*.html
+*.lnp
+*.sct
+*.dep
+*.build_log.htm
+
+# 链接和调试文件
+*.dep
+*_dep.*
+*.plg
+
+# Keil 用户配置文件 (个人设置)
+*.uvguix.*
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# IDE 生成的文件
+*.workspace
+*.project
+*.cproject
+*.launches/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# VS Code 配置 (可选择性忽略)
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+
+# 保留项目配置
+!.vscode/c_cpp_properties.json
+
+# 其他编译器输出
+build/
+Build/
+output/
+Output/
+Debug/
+Release/
+
+# 日志文件
+*.log
