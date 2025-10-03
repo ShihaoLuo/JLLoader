@@ -28,6 +28,7 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f1xx_hal.h"
+#include <stdbool.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -45,6 +46,9 @@ extern "C" {
 /* LED configuration for bootloader status indication */
 #define LED_PIN          GPIO_PIN_13
 #define LED_PORT         GPIOC
+
+/* Bootloader update flag */
+extern bool firmware_update_requested;
 
 /* USER CODE END EC */
 

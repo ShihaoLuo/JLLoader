@@ -378,6 +378,7 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
 
             case CMD_ERASE_FLASH:
                 if (frame_length >= sizeof(Protocol_EraseRequest_t)) {
+                    firmware_update_requested = true;  // Set flag for firmware update
                     Protocol_ProcessEraseRequest((const Protocol_EraseRequest_t*)frame_data);
                 } else {
                     Protocol_SendErrorReport(ERROR_LENGTH);
@@ -388,6 +389,7 @@ bool Protocol_ProcessReceivedData(const uint8_t* data, uint16_t length)
             case CMD_WRITE_FLASH:
                 // 最小长度检查: start_address(4) + data_length(1) + 至少2字节数据 = 7字节
                 if (frame_length >= 7) {
+                    firmware_update_requested = true;  // Set flag for firmware update
                     Protocol_ProcessWriteRequest((const Protocol_WriteRequest_t*)frame_data);
                 } else {
                     Protocol_SendErrorReport(ERROR_LENGTH);

@@ -35,11 +35,9 @@
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-#define BOOTLOADER_TIMEOUT_MS  10000  // 10 seconds
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
+  /* USER CODE BEGIN PD */
+#define BOOTLOADER_TIMEOUT_MS  2000  // 500ms timeout for firmware update check
+/* USER CODE END PD *//* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
 /* USER CODE END PM */
@@ -50,6 +48,9 @@
 static uint32_t bootloader_start_time = 0;
 static uint32_t led_last_toggle_time = 0;
 /* USER CODE END PV */
+
+/* Global variables ---------------------------------------------------------*/
+bool firmware_update_requested = false;  // Flag to indicate if firmware update command received
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
@@ -97,6 +98,14 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
   
+  // Only start timeout counter if we're in bootloader mode
+  if (Protocol_GetRunningMode() == MODE_BOOTLOADER) {
+    bootloader_start_time = HAL_GetTick();
+  } else {
+    // If we're in application mode, disable the timeout
+    bootloader_start_time = 0xFFFFFFFF;
+  }
+  
   // Turn off LED (PC13 is active-low, so SET turns it off)
   LED_TurnOff();
   
@@ -136,12 +145,16 @@ int main(void)
   {
     uint32_t current_time = HAL_GetTick();
     
-    // // Check if 10 seconds have elapsed
-    // if ((current_time - bootloader_start_time) >= BOOTLOADER_TIMEOUT_MS)
-    // {
-    //   // Jump to application using the new modular function
-    //   Bootloader_JumpToApplication(APPLICATION_ADDRESS);
-    // }
+    // Check if bootloader timeout has elapsed (500ms) and no firmware update is requested
+    if (!firmware_update_requested && (current_time - bootloader_start_time) >= BOOTLOADER_TIMEOUT_MS)
+    {
+        // Check if application is valid before jumping
+        if (Bootloader_CheckApplication(APPLICATION_ADDRESS))
+        {
+            // Jump to application using the modular function
+            Bootloader_JumpToApplication(APPLICATION_ADDRESS);
+        }
+    }
     
     // Check for pending jump requests from serial protocol
     Protocol_CheckPendingJump();
