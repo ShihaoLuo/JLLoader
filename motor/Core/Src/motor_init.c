@@ -124,7 +124,7 @@ void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 7199;           // 72MHz / 7200 = 10kHz
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 999;               // 10kHz / 1000 = 10Hz (100ms)
+  htim3.Init.Period = 199;               // 10kHz / 200 = 50Hz (20ms)
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -235,4 +235,7 @@ void Motor_System_Init(void)
   
   /* 8. 初始化RPM检测系统 */
   Motor_RPM_Detection_Init();
+  
+  /* 9. 初始化PID控制系统 */
+  Motor_PID_Init();
 }

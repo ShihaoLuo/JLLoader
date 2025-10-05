@@ -56,6 +56,13 @@
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
+uint16_t current_rpm_debug = 0;     // 当前转速（调试用）
+uint16_t target_rpm_debug = 0;      // 目标转速（调试用）
+float pid_output_debug = 0;         // PID输出（调试用）
+int16_t rpm_error_debug = 0;        // 转速误差（调试用）
+float current_kp_debug = 0;         // 当前Kp值（调试用）
+float current_ki_debug = 0;         // 当前Ki值（调试用）
+
 /**
   * @brief  电机控制系统主程序
   * @retval int 程序退出状态（通常不返回）
@@ -95,7 +102,21 @@ int main(void)
   /* 测试电机控制函数（示例） */
   HAL_Delay(1000);           // 等待1秒
   Motor_Start();             // 启动电机
-  Motor_SetSpeed(0);        // 设置50%速度
+  
+  /* 测试自适应PID转速控制 - 验证平衡优化效果 */
+  Motor_SetTargetRPM(180);   // 测试3000 RPM - 验证稳定性+响应性平衡
+  
+  /* 0.1%精度PWM控制演示（可选测试）
+   * 以下代码展示了如何使用0.1%精度控制：
+   * Motor_SetSpeedFine(50.7f);  // 50.7% PWM，对应PWM计数值493
+   * Motor_SetSpeedFine(25.3f);  // 25.3% PWM，对应PWM计数值747
+   * Motor_SetSpeedFine(75.1f);  // 75.1% PWM，对应PWM计数值249
+   * 
+   * PWM_PERIOD=1000，所以：
+   * - 1个计数 = 0.1% PWM精度
+   * - 50.7% → PWM计数 = (100-50.7)*10 = 493
+   * - 精度范围：0.0% - 100.0%，分辨率0.1%
+   */
   
   while (1)
   {
@@ -103,9 +124,22 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     
-    /* ========== 主循环 - 其他任务处理 ========== */
-    /* RPM检测已移至定时器中断处理，主循环可用于其他任务 */
-    /* 可以通过 Motor_GetRPM() 获取当前转速 */
+    /* ========== 主循环 - 调试信息监控 ========== */
+    current_rpm_debug = Motor_GetRPM();         // 当前实际转速
+    target_rpm_debug = Motor_GetTargetRPM();    // 目标转速
+    pid_output_debug = Motor_GetPIDOutput();    // PID输出值
+    rpm_error_debug = (int16_t)target_rpm_debug - (int16_t)current_rpm_debug; // 转速误差
+    current_kp_debug = Motor_GetCurrentKp();    // 当前Kp值
+    current_ki_debug = Motor_GetCurrentKi();    // 当前Ki值
+    
+    /* 在调试器中可以观察：
+     * - current_rpm_debug: 当前转速
+     * - target_rpm_debug: 目标转速
+     * - pid_output_debug: PID输出（PWM百分比，0-100）
+     * - rpm_error_debug: 转速误差（应该趋向于0）
+     * - current_kp_debug: 自适应Kp值
+     * - current_ki_debug: 自适应Ki值
+     */
     
     /* 短暂延时降低CPU占用 */
     HAL_Delay(10);
