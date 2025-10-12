@@ -405,6 +405,60 @@ class STM32Flasher:
             print("✗ 响应类型错误")
             return False
     
+    def jump_to_application(self):
+        """跳转到Application模式"""
+        print("\n[跳转到Application]")
+        
+        # 构建跳转请求
+        # target_mode (1) + jump_delay_ms (1) + timeout_ms (2) + magic_word (4)
+        data = bytearray()
+        data.append(MODE_APPLICATION)  # target_mode
+        data.append(10)  # jump_delay_ms (10ms)
+        data.extend((1000).to_bytes(2, 'little'))  # timeout_ms (1000ms)
+        data.extend((0x12345678).to_bytes(4, 'little'))  # magic_word
+        
+        frame = build_frame(CMD_JUMP_TO_MODE, 0x00, data)
+        print(f"  发送: {frame.hex(' ').upper()}")
+        
+        response = self.send_and_receive(frame, timeout=3)
+        if not response:
+            print("✗ 无响应")
+            return False
+        
+        parsed = parse_frame(response)
+        print(f"  接收: {response.hex(' ').upper()}")
+        
+        if not parsed['valid']:
+            print("✗ 校验和错误")
+            return False
+        
+        if parsed['type'] == CMD_JUMP_RESPONSE:
+            status = parsed['status']
+            status_names = {
+                MODE_JUMP_REQUESTED: "跳转请求已收到",
+                MODE_JUMP_PREPARING: "正在准备跳转", 
+                MODE_JUMP_SUCCESS: "跳转成功",
+                MODE_JUMP_FAILED: "跳转失败",
+                MODE_INVALID_TARGET: "无效的目标模式",
+                MODE_JUMP_TIMEOUT: "跳转超时"
+            }
+            
+            status_name = status_names.get(status, f"未知状态 (0x{status:02X})")
+            print(f"  状态: {status_name}")
+            
+            # 0x52-0x54 都是成功状态
+            if status in [MODE_JUMP_REQUESTED, MODE_JUMP_PREPARING, MODE_JUMP_SUCCESS]:
+                print("✓ 跳转成功，设备将运行新固件...")
+                time.sleep(1)  # 等待设备重启
+                self.current_mode = MODE_APPLICATION
+                return True
+            else:
+                print(f"✗ 跳转失败，状态码: 0x{status:02X}")
+                return False
+        else:
+            print("✗ 响应类型错误")
+            return False
+    
     def erase_flash(self, start_address, page_count):
         """擦除Flash"""
         print(f"\n[擦除Flash]")
@@ -642,10 +696,19 @@ def main():
             print("\n✗ 烧录失败")
             return 1
         
+        # 6. 跳转到应用程序
         print("\n" + "="*70)
-        print("✓ 全部完成! 固件已成功烧录到 0x08004000")
+        print("✓ 固件烧录成功! 正在跳转到应用程序...")
         print("="*70)
-        print("\n提示: 你可以发送跳转命令让设备运行新固件，或手动复位设备。")
+        
+        if flasher.jump_to_application():
+            print("\n✓ 设备已成功进入应用程序模式!")
+        else:
+            print("\n⚠ 跳转失败，请手动复位设备运行新固件")
+        
+        print("\n" + "="*70)
+        print("✓ 全部完成!")
+        print("="*70)
         
         return 0
         
