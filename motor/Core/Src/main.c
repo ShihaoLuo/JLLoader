@@ -104,7 +104,7 @@ int main(void)
   Motor_Start();             // 启动电机
   
   /* 测试自适应PID转速控制 - 验证平衡优化效果 */
-  Motor_SetTargetRPM(180);   // 测试3000 RPM - 验证稳定性+响应性平衡
+  Motor_SetTargetRPM(0);   // 测试3000 RPM - 验证稳定性+响应性平衡
   
   /* 0.1%精度PWM控制演示（可选测试）
    * 以下代码展示了如何使用0.1%精度控制：
@@ -140,6 +140,9 @@ int main(void)
      * - current_kp_debug: 自适应Kp值
      * - current_ki_debug: 自适应Ki值
      */
+    
+    // /* CAN接收任务 - 接收来自App节点的CAN消息 */
+    // Motor_CAN_ReceiveTask();
     
     /* 短暂延时降低CPU占用 */
     HAL_Delay(10);

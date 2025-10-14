@@ -509,46 +509,60 @@ void Protocol_ResetToBootloader(void)
     
     // === 额外清理App特有的状态 ===
     
-    // 0. 重置Flash访问状态
+    // 0. 去初始化CAN外设（如果已启用）
+    // #ifdef HAL_CAN_MODULE_ENABLED
+    extern CAN_HandleTypeDef hcan1;
+    HAL_CAN_Stop(&hcan1);                    // 停止CAN
+    HAL_CAN_DeInit(&hcan1);                  // 去初始化CAN
+    __HAL_RCC_CAN1_CLK_DISABLE();            // 禁用CAN时钟
+    
+    // 重置CAN GPIO引脚到默认状态（输入模式）
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_11 | GPIO_PIN_12;  // PA11(CAN_RX), PA12(CAN_TX)
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    // #endif
+    
+    // 1. 重置Flash访问状态
     __HAL_FLASH_PREFETCH_BUFFER_DISABLE();
     
-    // 1. 重置所有GPIO到默认状态（特别是PC13 LED）
+    // 2. 重置所有GPIO到默认状态（特别是PC13 LED）
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
     
     // 重置PC13到默认状态（输入、浮空）
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
     GPIO_InitStruct.Pin = GPIO_PIN_13;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
     
-    // 2. 重置NVIC优先级组到默认
+    // 3. 重置NVIC优先级组到默认
     HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
     
     // === 完全参考bootloader的清理步骤 ===
     
-    // 3. 禁用所有中断 (来自DisableInterrupts函数)
+    // 4. 禁用所有中断 (来自DisableInterrupts函数)
     __disable_irq();
     
-    // 4. 禁用SysTick完全
+    // 5. 禁用SysTick完全
     SysTick->CTRL = 0;
     SysTick->LOAD = 0;
     SysTick->VAL = 0;
     
-    // 5. 完全重置NVIC中断状态
+    // 6. 完全重置NVIC中断状态
     for (int i = 0; i < 8; i++) {
         NVIC->ICER[i] = 0xFFFFFFFF;  // 禁用所有中断
         NVIC->ICPR[i] = 0xFFFFFFFF;  // 清除所有挂起中断
     }
     
-    // 6. 重置所有外设 (来自ResetSystemPeripherals函数)
+    // 7. 重置所有外设 (来自ResetSystemPeripherals函数)
     __HAL_RCC_APB1_FORCE_RESET();
     __HAL_RCC_APB1_RELEASE_RESET();
     __HAL_RCC_APB2_FORCE_RESET();
     __HAL_RCC_APB2_RELEASE_RESET();
     
-    // 7. 重置RCC到默认状态 (来自ResetRCC函数)
+    // 8. 重置RCC到默认状态 (来自ResetRCC函数)
     // 启用HSI
     RCC->CR |= RCC_CR_HSION;
     
@@ -561,19 +575,19 @@ void Protocol_ResetToBootloader(void)
     // 禁用HSE、CSS、PLL
     RCC->CR &= ~(RCC_CR_HSEON | RCC_CR_CSSON | RCC_CR_PLLON);
     
-    // 8. 重新映射中断向量表到bootloader地址
+    // 9. 重新映射中断向量表到bootloader地址
     SCB->VTOR = BOOTLOADER_START_ADDRESS;
     
-    // 9. 从bootloader地址设置新的堆栈指针
+    // 10. 从bootloader地址设置新的堆栈指针
     __set_MSP(*((volatile uint32_t*)BOOTLOADER_START_ADDRESS));
     
-    // 10. 从bootloader地址+4获取复位处理程序地址
+    // 11. 从bootloader地址+4获取复位处理程序地址
     jump_address = *((volatile uint32_t*)(BOOTLOADER_START_ADDRESS + 4));
     
-    // 11. 清除LSB确保正确的函数地址 (来自bootloader逻辑)
+    // 12. 清除LSB确保正确的函数地址 (来自bootloader逻辑)
     jump_to_bootloader = (pFunction)jump_address;
     
-    // 12. 跳转到bootloader
+    // 13. 跳转到bootloader
     jump_to_bootloader();
     
     // 此函数不应返回

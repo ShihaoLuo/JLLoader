@@ -27,6 +27,7 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 
 /* Exported variables --------------------------------------------------------*/
+extern CAN_HandleTypeDef hcan1;
 
 /* Exported function prototypes ---------------------------------------------*/
 
@@ -59,6 +60,12 @@ void App_SysTick_Reconfig(void);
  * @retval None
  */
 void App_UART_Init(void);
+
+/**
+ * @brief  CAN1初始化函数
+ * @retval None
+ */
+void App_CAN_Init(void);
 
 /**
  * @brief  Protocol初始化函数

@@ -20,6 +20,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "motor_init.h"
 #include "motor_ctrl.h"
+#include "stm32f1xx_hal_can.h"
 
 /* Private includes ----------------------------------------------------------*/
 
@@ -30,6 +31,7 @@
 /* Private macro -------------------------------------------------------------*/
 
 /* Private variables ---------------------------------------------------------*/
+CAN_HandleTypeDef hcan1;
 
 /* Private function prototypes -----------------------------------------------*/
 
@@ -238,4 +240,119 @@ void Motor_System_Init(void)
   
   /* 9. 初始化PID控制系统 */
   Motor_PID_Init();
+  
+  /* 10. 初始化CAN1 */
+  Motor_CAN_Init();
+}
+
+/**
+ * @brief  CAN1初始化函数（Motor作为第二节点用于测试）
+ * @retval None
+ * @note   配置CAN1为500kbps波特率，使用PA11(RX)和PA12(TX)
+ *         与App项目的CAN配置完全相同，用于双节点通信测试
+ */
+void Motor_CAN_Init(void)
+{
+    CAN_FilterTypeDef sFilterConfig;
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    
+    /* 使能CAN1和GPIOA时钟 */
+    __HAL_RCC_CAN1_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    
+    /* 配置CAN1 GPIO引脚: PA11(RX)和PA12(TX) */
+    /* PA12 CAN1_TX */
+    GPIO_InitStruct.Pin = GPIO_PIN_12;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;         // 复用推挽输出
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    
+    /* PA11 CAN1_RX */
+    GPIO_InitStruct.Pin = GPIO_PIN_11;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;         // 输入模式
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    
+    /* CAN1基本配置 - 与App完全相同 */
+    hcan1.Instance = CAN1;
+    hcan1.Init.Prescaler = 8;                       // 预分频器
+    /* 注意：CAN1挂载在APB1总线上，APB1时钟 = 72MHz / 2 = 36MHz */
+    /* CAN时钟 = APB1时钟 / Prescaler = 36MHz / 8 = 4.5MHz */
+    hcan1.Init.Mode = CAN_MODE_NORMAL;              // 正常模式（双节点通信）
+    hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;         // 同步跳转宽度
+    hcan1.Init.TimeSeg1 = CAN_BS1_6TQ;              // 时间段1：6个时间量子
+    hcan1.Init.TimeSeg2 = CAN_BS2_2TQ;              // 时间段2：2个时间量子
+    /* 波特率计算: 
+     * 1个位时间 = 1 + TimeSeg1 + TimeSeg2 = 1 + 6 + 2 = 9TQ
+     * 波特率 = CAN时钟 / (Prescaler × 位时间)
+     *        = 36MHz / (8 × 9) = 4.5MHz / 9 = 500kbps 
+     */
+    
+    hcan1.Init.TimeTriggeredMode = DISABLE;         // 禁用时间触发模式
+    hcan1.Init.AutoBusOff = DISABLE;                // 禁用自动离线管理
+    hcan1.Init.AutoWakeUp = DISABLE;                // 禁用自动唤醒
+    hcan1.Init.AutoRetransmission = ENABLE;         // 使能自动重传
+    hcan1.Init.ReceiveFifoLocked = DISABLE;         // 接收FIFO不锁定
+    hcan1.Init.TransmitFifoPriority = DISABLE;      // 发送FIFO优先级由标识符决定
+    
+    if (HAL_CAN_Init(&hcan1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    
+    /* 配置CAN过滤器 - 接收所有消息 */
+    sFilterConfig.FilterBank = 0;                   // 过滤器组0
+    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+    sFilterConfig.FilterIdHigh = 0x0000;
+    sFilterConfig.FilterIdLow = 0x0000;
+    sFilterConfig.FilterMaskIdHigh = 0x0000;        // 接收所有ID
+    sFilterConfig.FilterMaskIdLow = 0x0000;
+    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+    sFilterConfig.FilterActivation = ENABLE;
+    sFilterConfig.SlaveStartFilterBank = 14;
+    
+    if (HAL_CAN_ConfigFilter(&hcan1, &sFilterConfig) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    
+    /* 启动CAN */
+    if (HAL_CAN_Start(&hcan1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+/**
+ * @brief  CAN接收任务 - 在主循环中周期性调用
+ * @retval None
+ * @note   接收来自App节点的CAN消息，并通过LED指示
+ */
+void Motor_CAN_ReceiveTask(void)
+{
+    CAN_RxHeaderTypeDef RxHeader;
+    uint8_t RxData[8];
+    static uint32_t receive_count = 0;
+    
+    /* 检查是否有接收到的消息 */
+    if (HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0) > 0)
+    {
+        /* 接收消息 */
+        if (HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK)
+        {
+            receive_count++;
+            
+            /* 验证消息ID */
+            if (RxHeader.StdId == 0x123)
+            {
+                /* 收到来自App的消息 - 翻转LED指示 */
+                HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+                
+                /* 可选：发送响应消息回App */
+                // Motor_CAN_SendResponse();
+            }
+        }
+    }
 }
