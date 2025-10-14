@@ -10,6 +10,7 @@
 #include "app_init.h"
 #include "uart.h"
 #include "protocol.h"
+#include "app_can_protocol.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -343,8 +344,6 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     CAN_RxHeaderTypeDef RxHeader;
     uint8_t RxData[8];
     static uint32_t receive_count = 0;
-    static uint32_t match_count = 0;
-    static uint32_t mismatch_count = 0;
     
     /* 检查是否是CAN1 */
     if (hcan->Instance == CAN1)
@@ -354,70 +353,28 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         {
             receive_count++;
             
-            /* 验证消息ID - 来自Motor的回传消息 */
-            if (RxHeader.StdId == 0x456)
-            {
-                char uart_buffer[256];
-                int len;
-                uint8_t* last_sent = App_GetLastSentData();
-                bool data_match = true;
-                
-                /* 验证数据是否与发送的一致 */
-                for (int i = 0; i < 8; i++)
-                {
-                    if (RxData[i] != last_sent[i])
-                    {
-                        data_match = false;
-                        break;
-                    }
-                }
-                
-                if (data_match)
-                {
-                    match_count++;
-                    /* 数据匹配 - 打印成功信息 */
-                    len = sprintf(uart_buffer, 
-                        "[ECHO OK #%lu] Data Match! TX=%lu RX=%lu Match=%lu Err=%lu | Data: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
-                        receive_count,
-                        App_GetSendCount(),
-                        receive_count,
-                        match_count,
-                        mismatch_count,
-                        RxData[0], RxData[1], RxData[2], RxData[3],
-                        RxData[4], RxData[5], RxData[6], RxData[7]
-                    );
-                }
-                else
-                {
-                    mismatch_count++;
-                    /* 数据不匹配 - 打印错误信息 */
-                    len = sprintf(uart_buffer, 
-                        "[ECHO ERROR #%lu] Data Mismatch!\r\n"
-                        "  Sent: %02X %02X %02X %02X %02X %02X %02X %02X\r\n"
-                        "  Recv: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
-                        receive_count,
-                        last_sent[0], last_sent[1], last_sent[2], last_sent[3],
-                        last_sent[4], last_sent[5], last_sent[6], last_sent[7],
-                        RxData[0], RxData[1], RxData[2], RxData[3],
-                        RxData[4], RxData[5], RxData[6], RxData[7]
-                    );
-                }
-                
-                /* 准备UART发送数据 - 不在中断中直接发送，避免阻塞 */
-                if (len > 0 && !uart_tx_buffer.pending)
-                {
-                    /* 复制数据到缓冲区 */
-                    memcpy(uart_tx_buffer.message, uart_buffer, len);
-                    uart_tx_buffer.length = len;
-                    uart_tx_buffer.pending = true;  // 设置待发送标志
-                }
-                
-                /* 翻转LED指示接收成功 */
-                if (data_match)
-                {
-                    App_LED_Toggle();
-                }
-            }
+            /* 调用协议层处理函数 */
+            AppCANProtocol_RxCallback(RxHeader.StdId, RxData, RxHeader.DLC);
+            
+            // /* 准备UART日志输出 - 简化的接收日志 */
+            // char uart_buffer[128];
+            // int len = sprintf(uart_buffer, 
+            //     "[CAN RX #%u] ID:0x%03X DLC:%d Data: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
+            //     receive_count,
+            //     RxHeader.StdId,
+            //     RxHeader.DLC,
+            //     RxData[0], RxData[1], RxData[2], RxData[3],
+            //     RxData[4], RxData[5], RxData[6], RxData[7]
+            // );
+            
+            // /* 准备UART发送数据 - 不在中断中直接发送，避免阻塞 */
+            // if (len > 0 && !uart_tx_buffer.pending)
+            // {
+            //     /* 复制数据到缓冲区 */
+            //     memcpy(uart_tx_buffer.message, uart_buffer, len);
+            //     uart_tx_buffer.length = len;
+            //     uart_tx_buffer.pending = true;  // 设置待发送标志
+            // }
         }
     }
 }

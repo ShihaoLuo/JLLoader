@@ -23,6 +23,8 @@
 #include "main.h"
 #include "protocol.h"
 #include "stm32f1xx_hal.h"
+#include <stdarg.h>
+#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -142,6 +144,26 @@ HAL_StatusTypeDef UART_ReceiveData(uint8_t* data, uint16_t size, uint32_t timeou
     return HAL_UART_Receive(&huart1, data, size, timeout);
   }
   return HAL_ERROR;
+}
+
+/**
+  * @brief  Printf-like function for UART output
+  * @param  format: format string (like printf)
+  * @param  ...: variable arguments
+  * @retval None
+  */
+void UART_Printf(const char* format, ...)
+{
+  char buffer[256];
+  va_list args;
+  va_start(args, format);
+  int len = vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+  
+  if (len > 0 && len < (int)sizeof(buffer))
+  {
+    UART_SendData((uint8_t*)buffer, len);
+  }
 }
 
 /* USER CODE BEGIN 4 */

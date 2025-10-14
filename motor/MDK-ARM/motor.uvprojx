@@ -420,6 +420,21 @@
               <FileType>1</FileType>
               <FilePath>..\Core\Src\motor_init.c</FilePath>
             </File>
+            <File>
+              <FileName>can_protocol_common.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Core\Src\can_protocol_common.c</FilePath>
+            </File>
+            <File>
+              <FileName>can_protocol_slave.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Core\Src\can_protocol_slave.c</FilePath>
+            </File>
+            <File>
+              <FileName>motor_can_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Core\Src\motor_can_protocol.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

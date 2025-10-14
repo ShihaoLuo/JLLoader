@@ -1,23 +1,27 @@
 /**
  * @file    main.c
- * @brief   STM32F103C8T6 LED闪烁应用程序
- *          PC13端口LED每2秒闪烁一次
+ * @brief   STM32F103C8T6 CAN主机应用程序
+ *          集成CAN协议、设备管理、心跳发现
  */
 
 #include "main.h"
 #include "app_init.h"
 #include "protocol.h"
 #include "uart.h"
+#include "app_can_protocol.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 /* 私有变量 */
 static uint32_t last_blink_time = 0;
-static uint32_t last_can_send_time = 0;
-static uint8_t last_sent_data[8] = {0};  // 保存最后发送的数据用于验证
-static uint32_t send_count = 0;
-void CAN_SendMessage(void);
+static bool discovery_started = false;
+static uint32_t last_motor_test_time = 0;
+static uint8_t test_phase = 0;
+static bool motor_forward = true;  // true=正转, false=反转
+
+/* 私有函数声明 */
+void CAN_TestMotorControl(void);
 uint8_t* App_GetLastSentData(void);
 uint32_t App_GetSendCount(void);
 
@@ -29,11 +33,24 @@ int main(void)
 {   
     /* 完整的应用程序初始化 */
     App_Init();
+    
+    /* 初始化CAN协议管理器 */
+    AppCANProtocol_Init(&hcan1);
 
     /* 获取初始时间 */
-    last_blink_time = HAL_GetTick();
+    static uint32_t test_start_time = 0;
     
-    /* 主循环 - 使用HAL_GetTick()进行2秒间隔闪烁 */
+    UART_Printf("\r\n========================================\r\n");
+    UART_Printf("  CAN Protocol Host Application Started\r\n");
+    UART_Printf("========================================\r\n\r\n");
+    
+    /* 延迟1秒后启动设备发现（仅执行一次） */
+    UART_Printf("Waiting 1 second before device discovery...\r\n");
+    HAL_Delay(DISCOVERY_DELAY);
+    AppCANProtocol_StartDiscovery();
+    discovery_started = true;
+    
+    /* 主循环 */
     while (1)
     {
         uint32_t current_time = HAL_GetTick();
@@ -42,95 +59,42 @@ int main(void)
         Protocol_CheckPendingJump();
         
         /* CAN接收处理已改为中断方式，但UART输出在主循环中处理 */
-        /* 中断回调函数: HAL_CAN_RxFifo0MsgPendingCallback() */
         App_CAN_ProcessUARTOutput();
         
-        /* CAN发送消息 - 每500ms发送一次，等待Motor回传 */
-        if ((current_time - last_can_send_time) >= 500)
-        {
-            CAN_SendMessage();
-            last_can_send_time = current_time;
-        }
+        /* 协议定时任务（心跳发送、超时检查） */
+        AppCANProtocol_Task();
 
-        /* 检查是否到达闪烁时间(2秒) */
-        if ((current_time - last_blink_time) >= LED_BLINK_DELAY)
-        {
-            App_LED_Toggle();
-            last_blink_time = current_time;
+        /* 电机使用演示 */
+        if ((current_time - test_start_time) >= 5000) {
+            UART_Printf("\r\n[Phase 2] Changing Motor 1 Speed to %d RPM\r\n", 0);
+            MotorControl_t control = {
+                .command = MOTOR_CMD_SET_BOTH,
+                .target_speed = 0,
+                .direction = MOTOR_DIR_CW,  // 保持当前方向
+                .accel = 0,
+                .decel = 0
+            };
+            AppCANProtocol_ControlMotor(1, &control);
+            test_start_time = current_time;
+            
+            HAL_Delay(100);
+            AppCANProtocol_QueryMotorStatus(1);
+            
+            // 显示状态
+            HAL_Delay(100);
+            MotorStatus_t *status = AppCANProtocol_GetMotorStatus(1);
+            if (status != NULL) {
+                UART_Printf("Motor 1 Current Status:\r\n");
+                UART_Printf("  Speed: %d RPM\r\n", status->actual_speed);
+                UART_Printf("  Direction: %d\r\n", status->direction);
+                UART_Printf("  Current: %d mA\r\n", status->current);
+                UART_Printf("  Temperature: %d°C\r\n", status->temperature);
+            }
         }
         
         /* 短暂延迟 */
-        HAL_Delay(2);
+        HAL_Delay(10);
     }
-}
-
-void CAN_SendMessage(void)
-{
-    CAN_TxHeaderTypeDef TxHeader;
-    uint8_t TxData[8];
-    uint32_t TxMailbox;
-    HAL_StatusTypeDef status;
-    static uint32_t error_count = 0;
-    char uart_buffer[128];
-    int len;
-    
-    // 配置发送消息头
-    TxHeader.StdId = 0x123;              // App使用ID 0x123
-    TxHeader.ExtId = 0x00;
-    TxHeader.RTR = CAN_RTR_DATA;
-    TxHeader.IDE = CAN_ID_STD;
-    TxHeader.DLC = 8;
-    TxHeader.TransmitGlobalTime = DISABLE;
-    
-    // 准备测试数据 - 包含计数器和固定模式
-    TxData[0] = 0xBB;                        // App起始标志
-    TxData[1] = 0x66;                        // App起始标志
-    TxData[2] = (send_count >> 8) & 0xFF;    // 计数器高字节
-    TxData[3] = send_count & 0xFF;           // 计数器低字节
-    TxData[4] = 0xAB;                        // 测试数据
-    TxData[5] = 0xCD;                        // 测试数据
-    TxData[6] = 0xEF;                        // 测试数据
-    TxData[7] = 0x90;                        // 测试数据
-    
-    // 保存发送的数据用于后续验证
-    for (int i = 0; i < 8; i++) {
-        last_sent_data[i] = TxData[i];
-    }
-    
-    // 发送消息
-    status = HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox);
-    if (status == HAL_OK)
-    {
-        send_count++;
-        
-        // 打印发送信息
-        len = sprintf(uart_buffer, 
-            "[CAN TX #%lu] ID:0x%03X Data: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
-            send_count,
-            TxHeader.StdId,
-            TxData[0], TxData[1], TxData[2], TxData[3],
-            TxData[4], TxData[5], TxData[6], TxData[7]
-        );
-        if (len > 0) {
-            UART_SendData((uint8_t*)uart_buffer, len);
-        }
-    }
-    else
-    {
-        error_count++;
-    }
-}
-
-// 获取最后发送的数据
-uint8_t* App_GetLastSentData(void)
-{
-    return last_sent_data;
-}
-
-// 获取发送计数
-uint32_t App_GetSendCount(void)
-{
-    return send_count;
 }
 
 #ifdef USE_FULL_ASSERT

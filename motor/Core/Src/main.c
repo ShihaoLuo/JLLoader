@@ -20,6 +20,7 @@
 #include "main.h"
 #include "motor_init.h"
 #include "motor_ctrl.h"
+#include "motor_can_protocol.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -62,7 +63,7 @@ float pid_output_debug = 0;         // PID输出（调试用）
 int16_t rpm_error_debug = 0;        // 转速误差（调试用）
 float current_kp_debug = 0;         // 当前Kp值（调试用）
 float current_ki_debug = 0;         // 当前Ki值（调试用）
-
+uint16_t target_speed = 0;        // 目标速度（调试用）
 /**
   * @brief  电机控制系统主程序
   * @retval int 程序退出状态（通常不返回）
@@ -93,18 +94,19 @@ int main(void)
   
   /* ========== 电机系统完整初始化 ========== */
   Motor_System_Init();
+  
+  /* ========== 初始化CAN协议（从机模式） ========== */
+  /* 注意：节点ID可以通过编译宏或DIP开关配置 */
+  MotorCANProtocol_Init(&hcan1, MOTOR_NODE_ID);  // 使用默认ID 0x01
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   
-  /* 测试电机控制函数（示例） */
-  HAL_Delay(1000);           // 等待1秒
-  Motor_Start();             // 启动电机
-  
-  /* 测试自适应PID转速控制 - 验证平衡优化效果 */
-  Motor_SetTargetRPM(0);   // 测试3000 RPM - 验证稳定性+响应性平衡
+  /* 注意：电机现在由CAN协议控制，不再使用本地测试代码 */
+  /* 电机将等待主机通过CAN总线发送控制命令 */
+  HAL_Delay(1000);           // 等待1秒，让系统稳定
   
   /* 0.1%精度PWM控制演示（可选测试）
    * 以下代码展示了如何使用0.1%精度控制：
@@ -124,24 +126,54 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     
-    /* ========== 主循环 - 调试信息监控 ========== */
-    current_rpm_debug = Motor_GetRPM();         // 当前实际转速
-    target_rpm_debug = Motor_GetTargetRPM();    // 目标转速
-    pid_output_debug = Motor_GetPIDOutput();    // PID输出值
-    rpm_error_debug = (int16_t)target_rpm_debug - (int16_t)current_rpm_debug; // 转速误差
-    current_kp_debug = Motor_GetCurrentKp();    // 当前Kp值
-    current_ki_debug = Motor_GetCurrentKi();    // 当前Ki值
+    /* ========== 主循环 - CAN协议处理和电机控制 ========== */
     
-    /* 在调试器中可以观察：
-     * - current_rpm_debug: 当前转速
-     * - target_rpm_debug: 目标转速
-     * - pid_output_debug: PID输出（PWM百分比，0-100）
-     * - rpm_error_debug: 转速误差（应该趋向于0）
-     * - current_kp_debug: 自适应Kp值
-     * - current_ki_debug: 自适应Ki值
-     */
+    /* 协议定时任务（更新运行时间等） */
+    MotorCANProtocol_Task();
     
-    /* CAN接收处理已改为中断方式，无需在主循环中调用 */
+    /* 根据CAN协议设置的目标参数控制电机 */
+    if (MotorCANProtocol_IsRunning()) {
+        // 电机应该运行
+        target_speed = MotorCANProtocol_GetTargetSpeed();
+        MotorDirection_t target_dir = MotorCANProtocol_GetTargetDirection();
+        
+        // 设置电机方向
+        if (target_dir == MOTOR_DIR_CW) {
+            Motor_SetDirection(true);   // 正转
+        } else if (target_dir == MOTOR_DIR_CCW) {
+            Motor_SetDirection(false);  // 反转
+        }
+        
+        // 设置目标转速
+        Motor_SetTargetRPM(target_speed);
+        
+        // 确保电机启动（无论当前转速是多少）
+        if (target_speed > 0) {
+            Motor_Start();
+        }
+    } else {
+        // 电机应该停止
+        Motor_Stop();
+        Motor_SetTargetRPM(0);
+    }
+    
+    /* 更新电机状态到协议层（供CAN响应使用） */
+    current_rpm_debug = Motor_GetRPM();
+    target_rpm_debug = Motor_GetTargetRPM();
+    pid_output_debug = Motor_GetPIDOutput();
+    rpm_error_debug = (int16_t)target_rpm_debug - (int16_t)current_rpm_debug;
+    current_kp_debug = Motor_GetCurrentKp();
+    current_ki_debug = Motor_GetCurrentKi();
+    
+    // 模拟电流和温度读取（实际应用中应从传感器读取）
+    uint16_t current_ma = (uint16_t)(pid_output_debug * 100);  // 简化计算
+    uint8_t temperature = 25 + (current_ma / 1000);  // 简化计算
+    uint8_t fault = 0x00;  // 无故障
+    
+    // 更新协议状态
+    MotorCANProtocol_UpdateStatus(current_rpm_debug, current_ma, temperature, fault);
+    
+    /* CAN接收处理已改为中断方式 */
     /* 中断回调函数: HAL_CAN_RxFifo0MsgPendingCallback() */
     
     /* 短暂延时降低CPU占用 */

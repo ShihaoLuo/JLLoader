@@ -20,6 +20,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "motor_init.h"
 #include "motor_ctrl.h"
+#include "motor_can_protocol.h"
 #include "stm32f1xx_hal_can.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -365,10 +366,6 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
     CAN_RxHeaderTypeDef RxHeader;
     uint8_t RxData[8];
-    CAN_TxHeaderTypeDef TxHeader;
-    uint8_t TxData[8];
-    uint32_t TxMailbox;
-    static uint32_t echo_count = 0;
     
     /* 检查是否是CAN1 */
     if (hcan->Instance == CAN1)
@@ -376,32 +373,11 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         /* 接收消息 */
         if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK)
         {
-            /* 验证消息ID - 来自App的消息 */
-            if (RxHeader.StdId == 0x123)
-            {
-                echo_count++;
-                
-                /* 准备回传消息头 */
-                TxHeader.StdId = 0x456;              // Motor回传使用ID 0x456
-                TxHeader.ExtId = 0x00;
-                TxHeader.RTR = CAN_RTR_DATA;         // 数据帧
-                TxHeader.IDE = CAN_ID_STD;           // 标准ID
-                TxHeader.DLC = 8;                    // 8字节数据
-                TxHeader.TransmitGlobalTime = DISABLE;
-                
-                /* 将接收到的数据原样复制到发送缓冲区 */
-                for (int i = 0; i < 8; i++)
-                {
-                    TxData[i] = RxData[i];
-                }
-                
-                /* 立即回传数据 */
-                if (HAL_CAN_AddTxMessage(hcan, &TxHeader, TxData, &TxMailbox) == HAL_OK)
-                {
-                    /* 翻转LED指示回传成功 */
-                    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
-                }
-            }
+            /* 将CAN消息传递给电机协议处理 */
+            MotorCANProtocol_RxCallback(RxHeader.StdId, RxData, RxHeader.DLC);
+            
+            /* 翻转LED指示接收到CAN消息 */
+            HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
         }
     }
 }

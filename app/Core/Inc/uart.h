@@ -86,6 +86,9 @@ bool UART_SendData(const uint8_t* data, uint16_t size);
 HAL_StatusTypeDef UART_ReceiveByte(uint8_t* data, uint32_t timeout);
 HAL_StatusTypeDef UART_ReceiveData(uint8_t* data, uint16_t size, uint32_t timeout);
 
+/* UART Printf Function */
+void UART_Printf(const char* format, ...);
+
 /* UART Interrupt Functions */
 void UART_StartInterruptReceive(void);
 void UART_StopInterruptReceive(void);
