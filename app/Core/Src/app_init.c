@@ -10,12 +10,27 @@
 #include "app_init.h"
 #include "uart.h"
 #include "protocol.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
 
 /* Private variables ---------------------------------------------------------*/
 static GPIO_PinState led_state = GPIO_PIN_SET;  // 初始状态：熄灭
 
 /* CAN Handle */
 CAN_HandleTypeDef hcan1;
+
+/* External variables --------------------------------------------------------*/
+extern UART_HandleTypeDef huart1;
+
+/* CAN接收数据缓冲 - 用于在中断和主循环间传递数据 */
+typedef struct {
+    char message[256];
+    uint16_t length;
+    volatile bool pending;
+} CAN_UART_Buffer_t;
+
+static CAN_UART_Buffer_t uart_tx_buffer = {0};
 
 /* Private function prototypes -----------------------------------------------*/
 
@@ -275,6 +290,135 @@ void App_CAN_Init(void)
     if (HAL_CAN_Start(&hcan1) != HAL_OK)
     {
         Error_Handler();
+    }
+    
+    /* 使能CAN接收中断 - FIFO0消息挂起中断 */
+    if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    
+    /* 配置CAN中断优先级 - 设置为较低优先级，避免阻塞UART */
+    HAL_NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 3, 0);  // 优先级3（低于UART的0），子优先级0
+    HAL_NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);          // 使能CAN RX0中断
+}
+
+/**
+ * @brief  处理CAN接收到的UART发送任务
+ * @retval None
+ * @note   在主循环中调用，发送CAN中断中准备好的数据
+ */
+void App_CAN_ProcessUARTOutput(void)
+{
+    /* 检查是否有待发送的数据 */
+    if (uart_tx_buffer.pending)
+    {
+        /* 发送数据 */
+        if (UART_SendData((uint8_t*)uart_tx_buffer.message, uart_tx_buffer.length))
+        {
+            /* 发送成功，清除标志 */
+            uart_tx_buffer.pending = false;
+        }
+    }
+}
+
+/**
+ * @brief  CAN接收任务 - 已废弃，改用中断方式
+ * @retval None
+ * @note   此函数已不再使用，现在使用CAN中断接收 + App_CAN_ProcessUARTOutput
+ */
+void App_CAN_ReceiveTask(void)
+{
+    // 此函数已废弃，现在使用 HAL_CAN_RxFifo0MsgPendingCallback() 中断回调
+}
+
+/**
+ * @brief  CAN接收FIFO0消息挂起中断回调函数
+ * @param  hcan: CAN句柄指针
+ * @retval None
+ * @note   当FIFO0接收到消息时自动调用此函数
+ */
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+    CAN_RxHeaderTypeDef RxHeader;
+    uint8_t RxData[8];
+    static uint32_t receive_count = 0;
+    static uint32_t match_count = 0;
+    static uint32_t mismatch_count = 0;
+    
+    /* 检查是否是CAN1 */
+    if (hcan->Instance == CAN1)
+    {
+        /* 接收消息 */
+        if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK)
+        {
+            receive_count++;
+            
+            /* 验证消息ID - 来自Motor的回传消息 */
+            if (RxHeader.StdId == 0x456)
+            {
+                char uart_buffer[256];
+                int len;
+                uint8_t* last_sent = App_GetLastSentData();
+                bool data_match = true;
+                
+                /* 验证数据是否与发送的一致 */
+                for (int i = 0; i < 8; i++)
+                {
+                    if (RxData[i] != last_sent[i])
+                    {
+                        data_match = false;
+                        break;
+                    }
+                }
+                
+                if (data_match)
+                {
+                    match_count++;
+                    /* 数据匹配 - 打印成功信息 */
+                    len = sprintf(uart_buffer, 
+                        "[ECHO OK #%lu] Data Match! TX=%lu RX=%lu Match=%lu Err=%lu | Data: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
+                        receive_count,
+                        App_GetSendCount(),
+                        receive_count,
+                        match_count,
+                        mismatch_count,
+                        RxData[0], RxData[1], RxData[2], RxData[3],
+                        RxData[4], RxData[5], RxData[6], RxData[7]
+                    );
+                }
+                else
+                {
+                    mismatch_count++;
+                    /* 数据不匹配 - 打印错误信息 */
+                    len = sprintf(uart_buffer, 
+                        "[ECHO ERROR #%lu] Data Mismatch!\r\n"
+                        "  Sent: %02X %02X %02X %02X %02X %02X %02X %02X\r\n"
+                        "  Recv: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
+                        receive_count,
+                        last_sent[0], last_sent[1], last_sent[2], last_sent[3],
+                        last_sent[4], last_sent[5], last_sent[6], last_sent[7],
+                        RxData[0], RxData[1], RxData[2], RxData[3],
+                        RxData[4], RxData[5], RxData[6], RxData[7]
+                    );
+                }
+                
+                /* 准备UART发送数据 - 不在中断中直接发送，避免阻塞 */
+                if (len > 0 && !uart_tx_buffer.pending)
+                {
+                    /* 复制数据到缓冲区 */
+                    memcpy(uart_tx_buffer.message, uart_buffer, len);
+                    uart_tx_buffer.length = len;
+                    uart_tx_buffer.pending = true;  // 设置待发送标志
+                }
+                
+                /* 翻转LED指示接收成功 */
+                if (data_match)
+                {
+                    App_LED_Toggle();
+                }
+            }
+        }
     }
 }
 

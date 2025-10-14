@@ -43,7 +43,8 @@ void MX_TIM4_Init(void);
 void MX_TIM3_Init(void);
 void Motor_System_Init(void);
 void Motor_CAN_Init(void);
-void Motor_CAN_ReceiveTask(void);
+void Motor_CAN_SendTask(void);
+void Motor_CAN_ReceiveAndEchoTask(void);
 
 #ifdef __cplusplus
 }

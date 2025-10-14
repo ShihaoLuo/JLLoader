@@ -141,8 +141,8 @@ int main(void)
      * - current_ki_debug: 自适应Ki值
      */
     
-    // /* CAN接收任务 - 接收来自App节点的CAN消息 */
-    // Motor_CAN_ReceiveTask();
+    /* CAN接收处理已改为中断方式，无需在主循环中调用 */
+    /* 中断回调函数: HAL_CAN_RxFifo0MsgPendingCallback() */
     
     /* 短暂延时降低CPU占用 */
     HAL_Delay(10);

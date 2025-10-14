@@ -323,35 +323,84 @@ void Motor_CAN_Init(void)
     {
         Error_Handler();
     }
+    
+    /* 使能CAN接收中断 - FIFO0消息挂起中断 */
+    if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    
+    /* 配置CAN中断优先级 */
+    HAL_NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 1, 0);  // 优先级1，子优先级0
+    HAL_NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);          // 使能CAN RX0中断
 }
 
 /**
- * @brief  CAN接收任务 - 在主循环中周期性调用
+ * @brief  CAN发送任务 - 每500ms发送一次数据给App (已弃用，改用回传模式)
  * @retval None
- * @note   接收来自App节点的CAN消息，并通过LED指示
+ * @note   此函数已不再使用，改为接收App数据后回传
  */
-void Motor_CAN_ReceiveTask(void)
+void Motor_CAN_SendTask(void)
+{
+    // 此函数已弃用，现在使用 Motor_CAN_ReceiveAndEchoTask() 进行回传
+}
+
+/**
+ * @brief  CAN接收并回传任务 - 已废弃，改用中断方式
+ * @retval None
+ * @note   此函数已不再使用，现在使用CAN中断接收
+ */
+void Motor_CAN_ReceiveAndEchoTask(void)
+{
+    // 此函数已废弃，现在使用 HAL_CAN_RxFifo0MsgPendingCallback() 中断回调
+}
+
+/**
+ * @brief  CAN接收FIFO0消息挂起中断回调函数
+ * @param  hcan: CAN句柄指针
+ * @retval None
+ * @note   当FIFO0接收到消息时自动调用此函数
+ */
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
     CAN_RxHeaderTypeDef RxHeader;
     uint8_t RxData[8];
-    static uint32_t receive_count = 0;
+    CAN_TxHeaderTypeDef TxHeader;
+    uint8_t TxData[8];
+    uint32_t TxMailbox;
+    static uint32_t echo_count = 0;
     
-    /* 检查是否有接收到的消息 */
-    if (HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0) > 0)
+    /* 检查是否是CAN1 */
+    if (hcan->Instance == CAN1)
     {
         /* 接收消息 */
-        if (HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK)
+        if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK)
         {
-            receive_count++;
-            
-            /* 验证消息ID */
+            /* 验证消息ID - 来自App的消息 */
             if (RxHeader.StdId == 0x123)
             {
-                /* 收到来自App的消息 - 翻转LED指示 */
-                HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+                echo_count++;
                 
-                /* 可选：发送响应消息回App */
-                // Motor_CAN_SendResponse();
+                /* 准备回传消息头 */
+                TxHeader.StdId = 0x456;              // Motor回传使用ID 0x456
+                TxHeader.ExtId = 0x00;
+                TxHeader.RTR = CAN_RTR_DATA;         // 数据帧
+                TxHeader.IDE = CAN_ID_STD;           // 标准ID
+                TxHeader.DLC = 8;                    // 8字节数据
+                TxHeader.TransmitGlobalTime = DISABLE;
+                
+                /* 将接收到的数据原样复制到发送缓冲区 */
+                for (int i = 0; i < 8; i++)
+                {
+                    TxData[i] = RxData[i];
+                }
+                
+                /* 立即回传数据 */
+                if (HAL_CAN_AddTxMessage(hcan, &TxHeader, TxData, &TxMailbox) == HAL_OK)
+                {
+                    /* 翻转LED指示回传成功 */
+                    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+                }
             }
         }
     }

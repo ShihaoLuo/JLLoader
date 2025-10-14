@@ -68,6 +68,12 @@ void App_UART_Init(void);
 void App_CAN_Init(void);
 
 /**
+ * @brief  CAN接收任务 - 接收Motor发送的消息并通过UART打印
+ * @retval None
+ */
+void App_CAN_ReceiveTask(void);
+
+/**
  * @brief  Protocol初始化函数
  * @retval None
  */
@@ -91,6 +97,24 @@ void App_LED_Toggle(void);
  * @retval GPIO_PinState LED当前状态
  */
 GPIO_PinState App_LED_GetState(void);
+
+/**
+ * @brief  获取最后发送的CAN数据（用于回传验证）
+ * @retval uint8_t* 指向最后发送数据的指针
+ */
+uint8_t* App_GetLastSentData(void);
+
+/**
+ * @brief  获取CAN发送计数
+ * @retval uint32_t 发送计数值
+ */
+uint32_t App_GetSendCount(void);
+
+/**
+ * @brief  处理CAN接收到的UART发送任务（在主循环中调用）
+ * @retval None
+ */
+void App_CAN_ProcessUARTOutput(void);
 
 /**
  * @brief  错误处理函数
