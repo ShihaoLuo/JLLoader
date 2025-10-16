@@ -6,6 +6,7 @@ STM32 固件烧录工具
 """
 
 import serial
+import serial.tools.list_ports
 import time
 import os
 import sys
@@ -137,6 +138,108 @@ def parse_frame(frame):
         'valid': verify_checksum(frame)
     }
     return result
+
+
+# ============================================================================
+# 串口自动检测功能
+# ============================================================================
+
+def detect_ch340_ports():
+    """检测所有可用的CH340串口"""
+    ch340_ports = []
+    available_ports = []
+    
+    try:
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            available_ports.append(f"{port.device} - {port.description}")
+            
+            # 检测CH340芯片
+            if port.description and any(keyword in port.description.upper() for keyword in [
+                'CH340', 'CH341', 'USB-SERIAL CH340', 'USB2.0-SERIAL'
+            ]):
+                ch340_ports.append(port.device)
+            
+            # 也检查硬件ID
+            elif port.hwid and any(vid_pid in port.hwid.upper() for vid_pid in [
+                'VID:PID=1A86:7523',  # CH340G
+                'VID:PID=1A86:55D4',  # CH340E
+                'VID:PID=1A86:5523',  # CH340T
+                'VID_1A86&PID_7523',  # Windows格式
+                'VID_1A86&PID_55D4',  # Windows格式
+                'VID_1A86&PID_5523'   # Windows格式
+            ]):
+                ch340_ports.append(port.device)
+                
+    except Exception as e:
+        print(f"⚠ 扫描串口时出错: {e}")
+    
+    return ch340_ports, available_ports
+
+
+def select_serial_port():
+    """自动选择或手动选择串口"""
+    print("\n正在扫描串口...")
+    
+    ch340_ports, available_ports = detect_ch340_ports()
+    
+    if ch340_ports:
+        if len(ch340_ports) == 1:
+            print(f"✓ 自动检测到CH340端口: {ch340_ports[0]}")
+            return ch340_ports[0]
+        else:
+            print(f"✓ 检测到多个CH340端口:")
+            for i, port in enumerate(ch340_ports, 1):
+                print(f"  {i}. {port}")
+            
+            while True:
+                try:
+                    choice = input(f"\n请选择端口 (1-{len(ch340_ports)}): ")
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(ch340_ports):
+                        return ch340_ports[idx]
+                    else:
+                        print("无效选择，请重试")
+                except ValueError:
+                    print("请输入有效数字")
+    else:
+        print("⚠ 未检测到CH340端口")
+        
+        if available_ports:
+            print("\n可用串口列表:")
+            for i, port_info in enumerate(available_ports, 1):
+                print(f"  {i}. {port_info}")
+            
+            print(f"\n选项:")
+            print(f"  1-{len(available_ports)}: 选择上述端口")
+            print(f"  m: 手动输入端口号 (如 COM3)")
+            print(f"  q: 退出")
+            
+            while True:
+                choice = input("\n请选择: ").strip().lower()
+                
+                if choice == 'q':
+                    return None
+                elif choice == 'm':
+                    port = input("请输入端口号 (如 COM3): ").strip()
+                    if port:
+                        return port
+                    else:
+                        print("端口号不能为空")
+                else:
+                    try:
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(available_ports):
+                            # 提取端口号 (COM3 - USB Serial Port)
+                            port_device = available_ports[idx].split(' - ')[0]
+                            return port_device
+                        else:
+                            print("无效选择，请重试")
+                    except ValueError:
+                        print("无效输入，请重试")
+        else:
+            print("✗ 未发现任何可用串口")
+            return None
 
 
 # ============================================================================
@@ -580,8 +683,8 @@ class STM32Flasher:
         bytes_written = 0
         failed_chunks = []
         
-        print(f"  总共 {total_chunks} 块数据")
-        print("\n开始写入:")
+        print(f"  总共 {total_chunks} 块数据，开始写入...")
+        print()
         
         start_time = time.time()
         
@@ -596,30 +699,39 @@ class STM32Flasher:
                 chunk_data = chunk_data + b'\xFF'
             
             progress = (i + 1) / total_chunks * 100
-            print(f"  [{i+1}/{total_chunks}] 0x{chunk_address:08X} ({len(chunk_data):3d}字节) ", end='')
+            
+            # 创建进度条
+            bar_length = 30
+            filled_length = int(bar_length * (i + 1) // total_chunks)
+            bar = '█' * filled_length + '░' * (bar_length - filled_length)
+            
+            # 一行显示进度条和信息
+            print(f"\r  写入中... [{bar}] {progress:5.1f}% ({i+1}/{total_chunks}) 0x{chunk_address:08X}", end='', flush=True)
             
             if self.write_flash_chunk(chunk_address, chunk_data):
                 bytes_written += len(chunk_data)
-                print(f"✓ [{progress:5.1f}%]")
             else:
-                print(f"✗ 失败")
                 failed_chunks.append(i)
-                # 尝试继续写入其他块
+                # 显示失败信息但继续
+                print(f"\r  写入中... [{bar}] {progress:5.1f}% ({i+1}/{total_chunks}) 0x{chunk_address:08X} ✗ 失败", end='', flush=True)
+        
+        # 最终结果
+        if failed_chunks:
+            print(f"\r  写入完成 [{'█' * bar_length}] 100.0% - 有 {len(failed_chunks)} 块失败              ")
+        else:
+            print(f"\r  写入完成 [{'█' * bar_length}] 100.0% - 全部成功！                    ")
         
         elapsed_time = time.time() - start_time
         
-        print(f"\n烧录完成:")
-        print(f"  写入字节: {bytes_written}/{total_bytes}")
-        print(f"  成功块数: {total_chunks - len(failed_chunks)}/{total_chunks}")
-        print(f"  失败块数: {len(failed_chunks)}")
-        print(f"  耗时: {elapsed_time:.2f}秒")
-        print(f"  速度: {bytes_written / elapsed_time:.1f} 字节/秒")
-        
+        print(f"\n烧录统计:")
         if failed_chunks:
-            print(f"\n✗ 失败的块: {failed_chunks}")
+            print(f"  ✗ 写入失败: {len(failed_chunks)} 块")
+            print(f"  成功块数: {total_chunks - len(failed_chunks)}/{total_chunks}")
+            print(f"  失败块号: {failed_chunks}")
             return False
         else:
-            print("\n✓ 固件烧录成功!")
+            print(f"  ✓ 全部成功: {bytes_written}/{total_bytes} 字节")
+            print(f"  耗时: {elapsed_time:.2f}秒 ({bytes_written / elapsed_time:.1f} 字节/秒)")
             return True
 
 
@@ -632,8 +744,13 @@ def main():
     print("STM32 固件烧录工具")
     print("="*70)
     
+    # 自动检测或选择串口
+    SERIAL_PORT = select_serial_port()
+    if not SERIAL_PORT:
+        print("\n✗ 未选择串口，程序退出")
+        return 1
+    
     # 配置参数
-    SERIAL_PORT = "COM5"  # 修改为你的串口号
     BAUDRATE = 115200
     FIRMWARE_PATH = "build/app.bin"
     

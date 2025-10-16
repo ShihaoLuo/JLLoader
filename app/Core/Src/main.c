@@ -18,7 +18,6 @@ static uint32_t last_blink_time = 0;
 static bool discovery_started = false;
 static uint32_t last_motor_test_time = 0;
 static uint8_t test_phase = 0;
-static bool motor_forward = true;  // true=正转, false=反转
 
 /* 私有函数声明 */
 void CAN_TestMotorControl(void);
@@ -50,6 +49,19 @@ int main(void)
     AppCANProtocol_StartDiscovery();
     discovery_started = true;
     
+    /* 立即启动电机 */
+    UART_Printf("\r\n[Phase 1] Starting Motor 1 at %d RPM\r\n", 300);
+    MotorControl_t control = {
+        .command = MOTOR_CMD_SET_BOTH,
+        .target_speed = 300, // 设置速度为300rpm
+        .direction = MOTOR_DIR_CW,  // 顺时针方向
+        .accel = 0,
+        .decel = 0
+    };
+    AppCANProtocol_ControlMotor(1, &control);
+    test_phase = 1; // 更新阶段标记
+    test_start_time = HAL_GetTick(); // 记录启动时间
+    
     /* 主循环 */
     while (1)
     {
@@ -64,18 +76,19 @@ int main(void)
         /* 协议定时任务（心跳发送、超时检查） */
         AppCANProtocol_Task();
 
-        /* 电机使用演示 */
-        if ((current_time - test_start_time) >= 5000) {
-            UART_Printf("\r\n[Phase 2] Changing Motor 1 Speed to %d RPM\r\n", 0);
+        /* 电机使用演示 - 运行5秒后停止 */
+        if (test_phase == 1 && (current_time - test_start_time) >= 5000) {
+            // 5秒后停止电机
+            UART_Printf("\r\n[Phase 2] Stopping Motor 1\r\n");
             MotorControl_t control = {
                 .command = MOTOR_CMD_SET_BOTH,
-                .target_speed = 0,
+                .target_speed = 0, // 停止电机
                 .direction = MOTOR_DIR_CW,  // 保持当前方向
                 .accel = 0,
                 .decel = 0
             };
             AppCANProtocol_ControlMotor(1, &control);
-            test_start_time = current_time;
+            test_phase = 2; // 更新阶段标记
             
             HAL_Delay(100);
             AppCANProtocol_QueryMotorStatus(1);
