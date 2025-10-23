@@ -23,7 +23,7 @@
 #include "motor_ctrl.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-extern TIM_HandleTypeDef htim3;
+extern TIM_HandleTypeDef htim2;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -204,6 +204,20 @@ void SysTick_Handler(void)
 /* USER CODE BEGIN 1 */
 
 /**
+  * @brief This function handles EXTI line 0 interrupt.
+  */
+void EXTI0_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI0_IRQn 0 */
+
+  /* USER CODE END EXTI0_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+  /* USER CODE BEGIN EXTI0_IRQn 1 */
+
+  /* USER CODE END EXTI0_IRQn 1 */
+}
+
+/**
   * @brief This function handles EXTI line[9:5] interrupts.
   */
 void EXTI9_5_IRQHandler(void)
@@ -211,24 +225,24 @@ void EXTI9_5_IRQHandler(void)
   /* USER CODE BEGIN EXTI9_5_IRQn 0 */
 
   /* USER CODE END EXTI9_5_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_7);
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
   /* USER CODE BEGIN EXTI9_5_IRQn 1 */
 
   /* USER CODE END EXTI9_5_IRQn 1 */
 }
 
 /**
-  * @brief This function handles TIM3 global interrupt.
+  * @brief This function handles TIM2 global interrupt.
   */
-void TIM3_IRQHandler(void)
+void TIM2_IRQHandler(void)
 {
-  /* USER CODE BEGIN TIM3_IRQn 0 */
+  /* USER CODE BEGIN TIM2_IRQn 0 */
 
-  /* USER CODE END TIM3_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim3);
-  /* USER CODE BEGIN TIM3_IRQn 1 */
+  /* USER CODE END TIM2_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim2);
+  /* USER CODE BEGIN TIM2_IRQn 1 */
 
-  /* USER CODE END TIM3_IRQn 1 */
+  /* USER CODE END TIM2_IRQn 1 */
 }
 
 /**

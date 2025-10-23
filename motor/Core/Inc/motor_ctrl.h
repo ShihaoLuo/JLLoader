@@ -1,13 +1,6 @@
 /* USER CODE BEGIN Header */
 /**
-  ****************** * 2. 自适应PID参数（6档位精确控制，根据系统特性细分）：
- *    - 超低转速(0-800 RPM): Kp=0.0024, Ki=0.006, Kd=0.001
- *    - 低转速(800-1500 RPM): Kp=0.004, Ki=0.018, Kd=0.0012
- *    - 中转速(1500-3000 RPM): Kp=0.0048, Ki=0.03, Kd=0.002  
- *    - 中高转速(3000-4500 RPM): Kp=0.0056, Ki=0.039, Kd=0.0025
- *    - 高转速(4500-6000 RPM): Kp=0.0064, Ki=0.048, Kd=0.0028
- *    - 超高转速(>6000 RPM): Kp=0.0064, Ki=0.051, Kd=0.0025
- *    - 死区 = 12 RPM，最小PWM = 1%******************************************************
+  ******************************************************************************
   * @file           : motor_ctrl.h
   * @brief          : Motor control and RPM detection functions header
   ******************************************************************************
@@ -26,10 +19,10 @@
   * ================
   * 
   * 1. 硬件配置：
-  *    - 霍尔传感器连接到 PB7 (带上拉电阻)
+  *    - 霍尔传感器连接到 PB0 (带上拉电阻)
   *    - 电机参数：18脉冲/转 (PPR = 18)
-  *    - PWM输出：PB6 (TIM4_CH1，反向逻辑控制)
-  *    - 控制信号：PB4(BK启停), PB5(FR方向)
+  *    - PWM输出：PA7 (TIM3_CH2，反向逻辑控制)
+  *    - 控制信号：PB4(BK启停), PA6(FR方向：低电平=顺时针, 高电平=逆时针)
   * 
   * 2. 测量原理：
   *    - 使用频率法：在固定时间窗口(20ms)内计数脉冲
@@ -114,8 +107,12 @@ typedef struct {
 /* Exported constants --------------------------------------------------------*/
 #define MAX_RPM_LIMIT 15000            // 最大转速限制(RPM)，防止计算错误
 
+// RPM检测平滑滤波参数
+#define RPM_FILTER_SIZE 10              // RPM移动平均滤波器大小 (10个周期 = 1秒 ÷ 10Hz = 100ms)
+#define RPM_DETECTION_PERIOD_MS 100    // RPM检测周期(ms) - 真实周期100ms
+
 // 电机PWM控制参数（反向逻辑：0%=最高速，100%=最低速）
-#define PWM_PERIOD 1000                // PWM周期值
+#define PWM_PERIOD 500                 // PWM周期值（调整为500以保持500Hz频率 with 36MHz TIM3）
 #define PWM_MAX_SPEED 0                // 最高速度对应的PWM值（0%占空比）
 #define PWM_MIN_SPEED PWM_PERIOD       // 最低速度对应的PWM值（100%占空比）
 #define PWM_STOP PWM_PERIOD            // 停止对应的PWM值（100%占空比）
@@ -125,27 +122,27 @@ typedef struct {
 #define PID_KI_BASE 0.03f              // 基础积分系数
 #define PID_KD_BASE 0.001f             // 基础微分系数
 #define PID_OUTPUT_LIMIT 100.0f        // PID输出限制（对应PWM百分比）
-#define PID_INTEGRAL_LIMIT 500.0f      // 积分限幅（适度增加，平衡稳定性和响应性）
+#define PID_INTEGRAL_LIMIT 5000.0f     // 积分限幅（增加到5000以支持充分的积分项输出）
 #define PID_DEADBAND 12                // 转速误差死区(RPM)，适度减小提高精度
 #define PWM_MIN_OUTPUT 1               // 电机启动最小PWM值（%），降低以解决低速控制饱和
 
-// 前馈补偿参数定义
-#define FEEDFORWARD_ENABLE 1           // 前馈补偿使能标志（重新启用）
-#define FEEDFORWARD_GAIN 0.008f        // 前馈增益 (PWM% per RPM，适度降低)
-#define FEEDFORWARD_OFFSET 3.0f        // 前馈偏移补偿 (PWM%，适度降低)
+// 前馈补偿参数定义 (基于最大转速1800 RPM调整)
+#define FEEDFORWARD_ENABLE 1           // 前馈补偿使能标志（禁用以保持纯PID）
+#define FEEDFORWARD_GAIN 0.055f        // 前馈增益: PWM% = target_rpm / 1800 * 100 ≈ target × 0.055
+#define FEEDFORWARD_OFFSET 2.0f        // 前馈偏移补偿 (PWM%)
 
-// 自适应PID参数范围定义
+// 自适应PID参数范围定义 (根据实际最大转速1800 RPM调整)
 #define ADAPTIVE_ENABLE 1              // 自适应PID使能标志
-#define RPM_RANGE_LOW 1500             // 低转速范围上限
-#define RPM_RANGE_MID 3000             // 中转速范围上限
-#define RPM_RANGE_HIGH_MID 4500        // 中高转速范围上限 (新增细分档位)
-#define RPM_RANGE_HIGH 6000            // 高转速范围上限
+#define RPM_RANGE_LOW 400              // 低转速范围上限 (原1500→400)
+#define RPM_RANGE_MID 900              // 中转速范围上限 (原3000→900)
+#define RPM_RANGE_HIGH_MID 1350        // 中高转速范围上限 (原4500→1350)
+#define RPM_RANGE_HIGH 1800            // 高转速范围上限 (原6000→1800，等于最大转速)
 
 /* Exported macro ------------------------------------------------------------*/
 
 /* Exported variables --------------------------------------------------------*/
+extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
-extern TIM_HandleTypeDef htim4;
 
 // 电机控制变量
 extern uint8_t motor_enable;
@@ -155,6 +152,7 @@ extern uint8_t motor_direction;
 extern uint32_t pulse_count;
 extern uint32_t rpm_calc_time;
 extern uint16_t motor_rpm;
+extern uint16_t motor_rpm_raw;  // 原始RPM（未滤波）
 
 // 转速检测状态变量
 extern uint8_t rpm_detection_active;
@@ -168,6 +166,17 @@ extern uint32_t last_pulse_time_ms;
 extern PID_TypeDef speed_pid;
 extern uint16_t target_rpm;
 extern uint8_t pid_control_enable;
+
+// 调试变量 - PID和PWM控制
+extern float pid_output_debug;         // PID输出值（0-100，对应speed_percent）
+extern float pid_error_debug;          // PID误差值 (目标RPM - 当前RPM)
+extern uint16_t pwm_value_debug;       // PWM实际值 (0-500，对应比较值)
+extern float pid_control_enable_debug; // PID是否启用 (0或1)
+extern float pid_pid_enable_debug;     // speed_pid.enable是否启用 (0或1)
+
+// 调试变量 - 用于验证中断和RPM检测流程
+extern uint32_t exti_trigger_count;     // EXTI中断触发计数
+extern uint32_t rpm_update_count;       // RPM更新周期计数
 
 /* Exported functions prototypes ---------------------------------------------*/
 // 电机控制函数

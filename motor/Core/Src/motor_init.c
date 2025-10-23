@@ -77,71 +77,71 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief TIM4 Initialization Function
-  * @param None
-  * @retval None
-  */
-void MX_TIM4_Init(void)
-{
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 143;
-  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 1000;
-  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 1000;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  HAL_TIM_MspPostInit(&htim4);
-}
-
-/**
-  * @brief TIM3 Initialization Function (for RPM detection timing)
+  * @brief TIM3 Initialization Function (for PWM output)
   * @param None
   * @retval None
   */
 void MX_TIM3_Init(void)
 {
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
 
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 7199;           // 72MHz / 7200 = 10kHz
+  htim3.Init.Prescaler = 6;              // 36MHz / 7 = 5.14MHz
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 199;               // 10kHz / 200 = 50Hz (20ms)
+  htim3.Init.Period = 500;               // 5.14MHz / 501 ≈ 10.26kHz, 占空比精度保持0.2%
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
   }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 500;                // 初始值=Period，占空比100%
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  HAL_TIM_MspPostInit(&htim3);
+}
+
+/**
+  * @brief TIM2 Initialization Function (for RPM detection timing)
+  * @param None
+  * @retval None
+  */
+void MX_TIM2_Init(void)
+{
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 1799;          // 36MHz / 1800 = 20kHz
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 99;               // 20kHz / 100 = 200Hz (5ms)
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
@@ -163,13 +163,13 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
   
   /* Timer Clock Enable */
-  __HAL_RCC_TIM3_CLK_ENABLE();  // 使能TIM3时钟（用于RPM检测定时）
-  __HAL_RCC_TIM4_CLK_ENABLE();  // 使能TIM4时钟（用于PWM输出）
+  __HAL_RCC_TIM2_CLK_ENABLE();  // 使能TIM2时钟（用于RPM检测定时）
+  __HAL_RCC_TIM3_CLK_ENABLE();  // 使能TIM3时钟（用于PWM输出）
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_SET);  // BK: 1=运行, 0=刹停
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);  // FR: 1=顺时针, 0=逆时针
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);  // FR: 1=正转, 0=反转
 
   /*Configure GPIO pin : PB3 (spare output) */
   GPIO_InitStruct.Pin = GPIO_PIN_3;
@@ -185,22 +185,29 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB5 (FR - 方向控制) */
-  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  /*Configure GPIO pin : PA6 (FR - 方向控制) */
+  GPIO_InitStruct.Pin = GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB7 (FG - 霍尔脉冲输入，外部中断模式) */
-  GPIO_InitStruct.Pin = GPIO_PIN_7;
+  /*Configure GPIO pin : PB0 (FG - 霍尔脉冲输入，外部中断模式) */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;  // 下降沿中断
   GPIO_InitStruct.Pull = GPIO_PULLUP;           // 上拉，确保稳定的数字信号
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /* EXTI interrupt init */
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+  /*Configure GPIO pin : PA7 (PWM输出 - TIM3_CH2) */
+  GPIO_InitStruct.Pin = GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // 复用推挽输出
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH; // PWM需要高速
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init - PB0需要EXTI0和EXTI9_5的支持 */
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 }
 
 /**
@@ -215,20 +222,20 @@ void Motor_System_Init(void)
   /* 2. GPIO初始化 */
   MX_GPIO_Init();
   
-  /* 3. TIM4 PWM初始化 */
-  MX_TIM4_Init();
-  
-  /* 4. TIM3定时器初始化（用于RPM检测） */
+  /* 3. TIM3 PWM初始化 */
   MX_TIM3_Init();
   
+  /* 4. TIM2定时器初始化（用于RPM检测） */
+  MX_TIM2_Init();
+  
   /* 5. 启动PWM输出 */
-  if (HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1) != HAL_OK)
+  if (HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
   
-  /* 6. 启动定时器中断（100ms周期） */
-  if (HAL_TIM_Base_Start_IT(&htim3) != HAL_OK)
+  /* 6. 启动定时器中断（20ms周期，50Hz，与原TIM3频率一致） */
+  if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK)
   {
     Error_Handler();
   }

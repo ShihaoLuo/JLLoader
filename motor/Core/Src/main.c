@@ -59,7 +59,6 @@
 /* USER CODE END 0 */
 uint16_t current_rpm_debug = 0;     // 当前转速（调试用）
 uint16_t target_rpm_debug = 0;      // 目标转速（调试用）
-float pid_output_debug = 0;         // PID输出（调试用）
 int16_t rpm_error_debug = 0;        // 转速误差（调试用）
 float current_kp_debug = 0;         // 当前Kp值（调试用）
 float current_ki_debug = 0;         // 当前Ki值（调试用）
@@ -106,8 +105,9 @@ int main(void)
   
   /* 注意：电机现在由CAN协议控制，不再使用本地测试代码 */
   /* 电机将等待主机通过CAN总线发送控制命令 */
-  HAL_Delay(1000);           // 等待1秒，让系统稳定
-  
+  HAL_Delay(500);           // 等待1秒，让系统稳定
+  // Motor_SetSpeedFine(50.7f);
+  // Motor_SetDirection(1);
   /* 0.1%精度PWM控制演示（可选测试）
    * 以下代码展示了如何使用0.1%精度控制：
    * Motor_SetSpeedFine(50.7f);  // 50.7% PWM，对应PWM计数值493
@@ -139,15 +139,15 @@ int main(void)
         
         // 设置电机方向
         if (target_dir == MOTOR_DIR_CW) {
-            Motor_SetDirection(true);   // 正转
+            Motor_SetDirection(1);   // 正转 (1=顺时针)
         } else if (target_dir == MOTOR_DIR_CCW) {
-            Motor_SetDirection(false);  // 反转
+            Motor_SetDirection(0);   // 反转 (0=逆时针)
         }
         
-        // 设置目标转速
+        // 设置目标转速（基于适配后的1800 RPM最大转速）
         Motor_SetTargetRPM(target_speed);
         
-        // 确保电机启动（无论当前转速是多少）
+        // 确保电机启动
         if (target_speed > 0) {
             Motor_Start();
         }
@@ -156,7 +156,7 @@ int main(void)
         Motor_Stop();
         Motor_SetTargetRPM(0);
     }
-    
+
     /* 更新电机状态到协议层（供CAN响应使用） */
     current_rpm_debug = Motor_GetRPM();
     target_rpm_debug = Motor_GetTargetRPM();
@@ -165,12 +165,12 @@ int main(void)
     current_kp_debug = Motor_GetCurrentKp();
     current_ki_debug = Motor_GetCurrentKi();
     
-    // 模拟电流和温度读取（实际应用中应从传感器读取）
-    uint16_t current_ma = (uint16_t)(pid_output_debug * 100);  // 简化计算
-    uint8_t temperature = 25 + (current_ma / 1000);  // 简化计算
-    uint8_t fault = 0x00;  // 无故障
+    // 计算电流和温度（基于PID输出）
+    uint16_t current_ma = (uint16_t)(pid_output_debug * 100);  // 简化计算：100% PWM ≈ 10A
+    uint8_t temperature = 25 + (current_ma / 1000);            // 简化计算：每1A增加1°C
+    uint8_t fault = 0x00;                                      // 无故障
     
-    // 更新协议状态
+    // 更新协议状态（用于CAN应答）
     MotorCANProtocol_UpdateStatus(current_rpm_debug, current_ma, temperature, fault);
     
     /* CAN接收处理已改为中断方式 */

@@ -43,7 +43,7 @@ extern "C" {
 #endif
 
 /* 电机转速约束 */
-#define MOTOR_MAX_SPEED         800     // 最大转速 800 RPM
+#define MOTOR_MAX_SPEED         1800    // 最大转速 1800 RPM (实际测试值)
 #define MOTOR_MIN_SPEED         0       // 最小转速 0 RPM
 
 /* 设备信息 */

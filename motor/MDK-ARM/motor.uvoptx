@@ -168,27 +168,32 @@
         <Ww>
           <count>2</count>
           <WinNumber>1</WinNumber>
-          <ItemText>send_count</ItemText>
+          <ItemText>rpm_error_debug,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>3</count>
           <WinNumber>1</WinNumber>
-          <ItemText>speed</ItemText>
+          <ItemText>pid_output_debug</ItemText>
         </Ww>
         <Ww>
           <count>4</count>
           <WinNumber>1</WinNumber>
-          <ItemText>target_speed,0x0A</ItemText>
+          <ItemText>target_rpm_debug,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>5</count>
           <WinNumber>1</WinNumber>
-          <ItemText>rpm_error_debug,0x0A</ItemText>
+          <ItemText>motor_rpm,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>6</count>
           <WinNumber>1</WinNumber>
-          <ItemText>pid_output_debug</ItemText>
+          <ItemText>motor_rpm_raw,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>7</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>pulse_count,0x0A</ItemText>
         </Ww>
       </WatchWindow1>
       <MemoryWindow1>

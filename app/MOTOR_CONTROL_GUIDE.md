@@ -6,7 +6,7 @@
 ```c
 bool AppCANProtocol_StartMotor(uint8_t motor_id, uint16_t speed, MotorDirection_t direction);
 // motor_id: 1-20
-// speed: 0-800 RPM
+// speed: 0 or 180-800 RPM
 // direction: MOTOR_DIR_CW(顺时针) 或 MOTOR_DIR_CCW(逆时针)
 ```
 
@@ -65,6 +65,7 @@ int main(void) {
 | 参数 | 值 |
 |------|-----|
 | 最大转速 | 800 RPM |
+| 最低转速 | 0 或者 180 RPM |
 | 电机ID | 1-20 |
 | 方向常量 | MOTOR_DIR_CW / MOTOR_DIR_CCW |
 | 心跳超时 | 3000 ms |
