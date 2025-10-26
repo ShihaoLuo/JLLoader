@@ -200,5 +200,17 @@ void SysTick_Handler(void)
 
 /* USER CODE BEGIN 1 */
 
+/**
+ * @brief DMA1 Channel2 中断处理（TIM1_CH1 DMA）
+ */
+void DMA1_Channel2_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Channel2_IRQn 0 */
+  extern DMA_HandleTypeDef hdma_tim1_ch1;
+  
+  HAL_DMA_IRQHandler(&hdma_tim1_ch1);
+  /* USER CODE END DMA1_Channel2_IRQn 0 */
+}
+
 /* USER CODE END 1 */
 

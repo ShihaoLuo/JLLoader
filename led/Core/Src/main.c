@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "ws2812.h"
+#include "ws2812_screen.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -41,15 +43,15 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
-TIM_HandleTypeDef htim4;
-
+WS2812_t ws2812_controller;
+WS2812_Screen_t screen_controller;
+TIM_HandleTypeDef htim1 = {0};  /* TIM1 handle for WS2812 PWM */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_TIM4_Init(void);
+static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -87,12 +89,14 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_TIM4_Init();
-  
-  /* Start PWM on TIM4 Channel 1 */
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
-  
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+
+  /* Initialize WS2812 LED controller */
+  WS2812_Init(&ws2812_controller, &htim1, TIM_CHANNEL_1);
+  
+  /* Initialize screen controller (4x4 LED grid) */
+  Screen_Init(&screen_controller, &ws2812_controller);
 
   /* USER CODE END 2 */
 
@@ -103,6 +107,81 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    
+    /* Test 1: Fill entire screen with colors */
+    RGB_t red = WS2812_RGB(255, 0, 0);
+    Screen_Fill(&screen_controller, red);
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    RGB_t green = WS2812_RGB(0, 255, 0);
+    Screen_Fill(&screen_controller, green);
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    RGB_t blue = WS2812_RGB(0, 0, 255);
+    Screen_Fill(&screen_controller, blue);
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    /* Test 2: Draw checkerboard pattern */
+    Screen_Clear(&screen_controller);
+    RGB_t yellow = WS2812_RGB(255, 255, 0);
+    for (uint8_t y = 0; y < 4; y++) {
+      for (uint8_t x = 0; x < 4; x++) {
+        if ((x + y) % 2 == 0) {
+          Screen_SetPixel(&screen_controller, x, y, yellow);
+        }
+      }
+    }
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    /* Test 3: Draw border rectangle */
+    Screen_Clear(&screen_controller);
+    RGB_t cyan = WS2812_RGB(0, 255, 255);
+    Screen_DrawRect(&screen_controller, 0, 0, 3, 3, cyan);
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    /* Test 4: Fill rectangle */
+    Screen_Clear(&screen_controller);
+    RGB_t magenta = WS2812_RGB(255, 0, 255);
+    Screen_FillRect(&screen_controller, 1, 1, 2, 2, magenta);
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    /* Test 5: Draw vertical lines */
+    Screen_Clear(&screen_controller);
+    RGB_t white = WS2812_RGB(255, 255, 255);
+    for (uint8_t x = 0; x < 4; x++) {
+      Screen_DrawVLine(&screen_controller, x, 0, 3, white);
+    }
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    /* Test 6: Draw horizontal lines */
+    Screen_Clear(&screen_controller);
+    RGB_t orange = WS2812_RGB(255, 165, 0);
+    for (uint8_t y = 0; y < 4; y++) {
+      Screen_DrawHLine(&screen_controller, 0, 3, y, orange);
+    }
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
+    /* Test 7: Rainbow pattern - each column different color */
+    RGB_t rainbow[] = {
+      WS2812_RGB(255, 0, 0),      // 红
+      WS2812_RGB(255, 127, 0),    // 橙
+      WS2812_RGB(0, 255, 0),      // 绿
+      WS2812_RGB(0, 0, 255),      // 蓝
+    };
+    for (uint8_t x = 0; x < 4; x++) {
+      Screen_SetColumn(&screen_controller, x, rainbow[x]);
+    }
+    Screen_Flush(&screen_controller);
+    HAL_Delay(2000);
+    
   }
   /* USER CODE END 3 */
 }
@@ -157,56 +236,68 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
 
 }
 
 /**
-  * @brief TIM4 Initialization Function
+  * @brief TIM1 Initialization Function (for WS2812 control)
   * @param None
   * @retval None
+  * 
+  * TIM1配置为800KHz PWM频率用于WS2812驱动：
+  * PSC = 0 (无分频)
+  * ARR = 89 (自动重装值)
+  * 频率 = 72MHz / (0+1) / (89+1) = 800KHz ✓
+  * 占空比由DMA动态控制
   */
-static void MX_TIM4_Init(void)
+static void MX_TIM1_Init(void)
 {
+
   TIM_OC_InitTypeDef sConfigOC = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* TIM4 clock enable */
-  __HAL_RCC_TIM4_CLK_ENABLE();
-
-  htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 0;
-  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 719;  /* For 100KHz: 72MHz / 100KHz = 720 */
-  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 360;  /* 50% duty cycle: 360 / 720 = 50% */
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /* GPIO Configuration */
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-  GPIO_InitStruct.Pin = GPIO_PIN_6;
+
+  /* TIM1 clock enable */
+  __HAL_RCC_TIM1_CLK_ENABLE();
+
+  /* PA8 GPIO configuration for PWM output */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* TIM1 parameter configuration for WS2812 (800KHz) */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 0;           /* PSC = 0: 无分频 */
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 89;             /* ARR = 89, 频率 = 72MHz/90 = 800KHz */
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  HAL_TIM_PWM_Init(&htim1);
+
+  /* Configure output compare for DMA mode */
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 45;               /* 初始占空比50% (45/90) */
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1);
+
+  /* Break and Dead Time configuration */
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig);
+
+  /* Start PWM generation (will use DMA for data transfer) */
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
 }
 
